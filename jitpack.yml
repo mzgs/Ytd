@@ -1,13 +1,41 @@
 jdk:
   - openjdk17
 
-before_install:
-  - |
-      if ! command -v python3 >/dev/null 2>&1; then
-        apt-get update
-        apt-get install -y python3
-      fi
-      python3 --version
-
 install:
-  - ./gradlew :ytdlib:publishReleasePublicationToMavenLocal
+  - |
+      current_python=""
+      if command -v python3 >/dev/null 2>&1; then
+        current_python="$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')"
+      fi
+
+      case "$current_python" in
+        3.1[0-9]|4.*)
+          ;;
+        *)
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64)
+              miniforge_arch="x86_64"
+              ;;
+            aarch64|arm64)
+              miniforge_arch="aarch64"
+              ;;
+            *)
+              echo "Unsupported architecture: $arch"
+              exit 1
+              ;;
+          esac
+
+          if [ ! -x "$HOME/miniforge3/bin/python3" ]; then
+            curl -fsSL "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${miniforge_arch}.sh" -o "$HOME/miniforge.sh"
+            bash "$HOME/miniforge.sh" -b -p "$HOME/miniforge3"
+            rm -f "$HOME/miniforge.sh"
+          fi
+
+          export PATH="$HOME/miniforge3/bin:$PATH"
+          ;;
+      esac
+
+      export CHAQUOPY_BUILD_PYTHON="$(command -v python3)"
+      python3 --version
+      ./gradlew :ytdlib:publishReleasePublicationToMavenLocal

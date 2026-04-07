@@ -37,7 +37,13 @@ fun probePythonCommand(command: List<String>): String? {
 }
 
 fun detectChaquopyBuildPython(): ChaquopyBuildPython {
-    val candidates = listOf(
+    val envCandidate = providers.environmentVariable("CHAQUOPY_BUILD_PYTHON")
+        .orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let { listOf(it) }
+
+    val candidates = listOfNotNull(
+        envCandidate,
         listOf("python3"),
         listOf("python"),
     ) + supportedChaquopyVersions.map { version ->
