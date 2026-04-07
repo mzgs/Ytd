@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
@@ -28,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.mzgs.ytdlib.YtDlp
@@ -64,6 +66,7 @@ fun YtDlpTesterScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     var url by rememberSaveable { mutableStateOf("") }
+    var mp3BitrateKbpsText by rememberSaveable { mutableStateOf(DEFAULT_MP3_BITRATE_KBPS.toString()) }
     var output by rememberSaveable { mutableStateOf("yt-dlp --json output will appear here") }
     var isRunning by rememberSaveable { mutableStateOf(false) }
     var progress by remember { mutableStateOf<YtDlpProgress?>(null) }
@@ -87,6 +90,18 @@ fun YtDlpTesterScreen(
             placeholder = { Text("https://www.youtube.com/watch?v=...") },
             singleLine = true,
             enabled = !isRunning,
+        )
+
+        OutlinedTextField(
+            value = mp3BitrateKbpsText,
+            onValueChange = { mp3BitrateKbpsText = it.filter(Char::isDigit) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("MP3 bitrate (kbps)") },
+            placeholder = { Text("192") },
+            supportingText = { Text("Used by Download MP3. Range: 64–320 kbps") },
+            singleLine = true,
+            enabled = !isRunning,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
 
         Row(
@@ -154,6 +169,46 @@ fun YtDlpTesterScreen(
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Download")
+            }
+
+            Button(
+                onClick = {
+                    val trimmedUrl = url.trim()
+                    if (trimmedUrl.isBlank()) {
+                        output = "Please enter a URL first"
+                        return@Button
+                    }
+
+                    val bitrateKbps = mp3BitrateKbpsText.toIntOrNull()
+                    if (bitrateKbps == null) {
+                        output = "Please enter a valid MP3 bitrate"
+                        return@Button
+                    }
+
+                    isRunning = true
+                    progress = null
+                    output = "Preparing MP3 download at ${bitrateKbps.coerceIn(64, 320)} kbps..."
+
+                    val progressListener = YtDlpProgressListener { update ->
+                        coroutineScope.launch {
+                            progress = update
+                        }
+                    }
+
+                    coroutineScope.launch {
+                        output = runYtDlpMp3Download(
+                            context = applicationContext,
+                            url = trimmedUrl,
+                            progressListener = progressListener,
+                            bitrateKbps = bitrateKbps,
+                        )
+                        isRunning = false
+                    }
+                },
+                enabled = !isRunning,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Download MP3")
             }
         }
 
@@ -268,6 +323,46 @@ private suspend fun runYtDlpDownload(
     }
 }
 
+private suspend fun runYtDlpMp3Download(
+    context: android.content.Context,
+    url: String,
+    progressListener: YtDlpProgressListener,
+    bitrateKbps: Int,
+): String {
+    return withContext(Dispatchers.IO) {
+        val downloadDirectory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.filesDir
+
+        try {
+            val result = YtDlp.downloadMp3(
+                context = context,
+                url = url,
+                options = mapOf(
+                    "paths" to mapOf("home" to downloadDirectory.absolutePath),
+                    "outtmpl" to "%(title)s.%(ext)s",
+                ),
+                progressListener = progressListener,
+                bitrateKbps = bitrateKbps,
+            )
+
+            buildString {
+                appendLine("MP3 download finished")
+                appendLine("Directory: ${downloadDirectory.absolutePath}")
+                appendLine("Bitrate: ${result.payload?.optInt("mp3_bitrate_kbps") ?: bitrateKbps} kbps")
+                result.payload?.optString("mp3_filepath")?.let { mp3Path ->
+                    appendLine("MP3: $mp3Path")
+                }
+                appendLine()
+                append(result.payload?.toString(2) ?: "{}")
+            }.trim()
+        } catch (exception: YtDlpException) {
+            buildYtDlpError(exception)
+        } catch (exception: Exception) {
+            exception.stackTraceToString()
+        }
+    }
+}
+
 private fun buildYtDlpError(exception: YtDlpException): String {
     return buildString {
         appendLine("${exception.pythonType}: ${exception.message}")
@@ -357,3 +452,5 @@ private fun formatEta(seconds: Long): String {
         else -> "${remainingSeconds}s"
     }
 }
+
+private const val DEFAULT_MP3_BITRATE_KBPS = 192

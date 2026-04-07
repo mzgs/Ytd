@@ -5,6 +5,7 @@ import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 object YtDlp {
 
@@ -46,6 +47,102 @@ object YtDlp {
                 options = options,
             ),
             progressListener = progressListener,
+        )
+    }
+
+    @Throws(YtDlpException::class)
+    fun downloadMp3(
+        context: Context,
+        url: String,
+        options: Map<String, Any?> = emptyMap(),
+        progressListener: YtDlpProgressListener? = null,
+        bitrateKbps: Int = 192,
+        deleteSourceFile: Boolean = true,
+    ): YtDlpResult {
+        val resolvedBitrateKbps = bitrateKbps.coerceIn(64, 320)
+        val downloadOptions = options.toMutableMap().apply {
+            putIfAbsent("format", "bestaudio/best")
+        }
+
+        val downloadResult = download(
+            context = context,
+            url = url,
+            options = downloadOptions,
+            progressListener = progressListener,
+        )
+
+        val sourceFile = downloadResult.payload
+            ?.findDownloadedFilePath()
+            ?.let(::File)
+            ?.absoluteFile
+            ?.takeIf(File::exists)
+            ?: throw YtDlpException(
+                pythonType = "AudioConversion",
+                message = "Downloaded audio file path could not be resolved for MP3 conversion",
+                traceback = null,
+                logs = downloadResult.logs,
+            )
+
+        val mp3File = if (sourceFile.extension.equals(MP3_EXTENSION, ignoreCase = true)) {
+            sourceFile
+        } else {
+            File(sourceFile.parentFile, "${sourceFile.nameWithoutExtension}.$MP3_EXTENSION")
+        }
+
+        if (sourceFile != mp3File) {
+            progressListener?.onProgress(
+                YtDlpProgress(
+                    status = "converting",
+                    downloadedBytes = null,
+                    totalBytes = null,
+                    totalBytesEstimate = null,
+                    progressFraction = null,
+                    speedBytesPerSecond = null,
+                    etaSeconds = null,
+                    filename = mp3File.absolutePath,
+                ),
+            )
+
+            val commandResult = convertAudioFileToMp3(
+                sourceFile = sourceFile,
+                mp3File = mp3File,
+                bitrateKbps = resolvedBitrateKbps,
+            )
+
+            if (commandResult.exitCode != 0) {
+                throw YtDlpException(
+                    pythonType = "AudioConversion",
+                    message = "Audio conversion failed to convert ${sourceFile.name} to MP3",
+                    traceback = null,
+                    logs = downloadResult.logs + YtDlpLogEntry(
+                        level = "error",
+                        message = commandResult.output.ifBlank { "MP3 conversion failed" },
+                    ),
+                )
+            }
+
+            if (deleteSourceFile) {
+                sourceFile.delete()
+            }
+        }
+
+        progressListener?.onProgress(
+            YtDlpProgress(
+                status = "finished",
+                downloadedBytes = mp3File.length().takeIf { it > 0L },
+                totalBytes = mp3File.length().takeIf { it > 0L },
+                totalBytesEstimate = mp3File.length().takeIf { it > 0L },
+                progressFraction = 1.0,
+                speedBytesPerSecond = null,
+                etaSeconds = null,
+                filename = mp3File.absolutePath,
+            ),
+        )
+
+        return downloadResult.withPayloadFields(
+            "mp3_filepath" to mp3File.absolutePath,
+            "mp3_bitrate_kbps" to resolvedBitrateKbps,
+            "source_filepath" to sourceFile.absolutePath,
         )
     }
 
@@ -125,6 +222,7 @@ object YtDlp {
     }
 
     private const val MODULE_NAME = "ytd_bridge"
+    private const val MP3_EXTENSION = "mp3"
 }
 
 fun interface YtDlpProgressListener {
@@ -261,4 +359,31 @@ private fun JSONObject.optStringOrNull(name: String): String? {
         return null
     }
     return optString(name).ifBlank { null }
+}
+
+private fun JSONObject.findDownloadedFilePath(): String? {
+    optStringOrNull("filepath")?.let { return it }
+    optStringOrNull("_filename")?.let { return it }
+
+    optJSONArray("requested_downloads")?.let { downloads ->
+        for (index in 0 until downloads.length()) {
+            downloads.optJSONObject(index)?.findDownloadedFilePath()?.let { return it }
+        }
+    }
+
+    optJSONArray("entries")?.let { entries ->
+        for (index in 0 until entries.length()) {
+            entries.optJSONObject(index)?.findDownloadedFilePath()?.let { return it }
+        }
+    }
+
+    return null
+}
+
+private fun YtDlpResult.withPayloadFields(vararg fields: Pair<String, Any?>): YtDlpResult {
+    val payloadCopy = JSONObject(payload?.toString() ?: "{}")
+    fields.forEach { (key, value) ->
+        payloadCopy.put(key, value.toJsonValue())
+    }
+    return copy(payload = payloadCopy)
 }

@@ -16,8 +16,20 @@ android {
             abiFilters += listOf("arm64-v8a")
         }
 
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c11")
+            }
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     buildTypes {

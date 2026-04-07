@@ -73,11 +73,28 @@ val result = YtDlp.download(
 )
 ```
 
+MP3 download example:
+
+```kotlin
+val result = YtDlp.downloadMp3(
+    context = applicationContext,
+    url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    options = mapOf(
+        "paths" to mapOf("home" to filesDir.absolutePath),
+        "outtmpl" to "%(title)s.%(ext)s",
+    ),
+    bitrateKbps = 320,
+)
+
+val mp3Path = result.payload?.optString("mp3_filepath")
+```
+
 ## Public API
 
 - `YtDlp.getVersion(context)`
 - `YtDlp.extractInfo(context, url, options)`
 - `YtDlp.download(context, url, options, progressListener)`
+- `YtDlp.downloadMp3(context, url, options, progressListener, bitrateKbps, deleteSourceFile)`
 - `YtDlp.run(context, request, progressListener)`
 
 Errors are thrown as `YtDlpException`, which includes the Python exception type, traceback, and collected log messages.
@@ -85,4 +102,5 @@ Errors are thrown as `YtDlpException`, which includes the Python exception type,
 ## Notes
 
 - The library currently packages only the `arm64-v8a` Python runtime.
-- Some `yt-dlp` post-processing flows require external tools like `ffmpeg`, which are not bundled here.
+- The library now converts downloads to MP3 on Android using `MediaCodec` decoding plus a small JNI wrapper around static `lame`.
+- This avoids bundling large FFmpeg shared libraries and keeps the APK compatible with Android 15 16 KB page-size requirements.
