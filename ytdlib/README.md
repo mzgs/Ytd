@@ -55,12 +55,30 @@ val result = YtDlp.download(
 )
 ```
 
+Download with progress:
+
+```kotlin
+val result = YtDlp.download(
+    context = applicationContext,
+    url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    options = mapOf(
+        "paths" to mapOf("home" to filesDir.absolutePath),
+    ),
+    progressListener = YtDlpProgressListener { progress ->
+        Log.d(
+            "ytdlib",
+            "${progress.status} ${progress.progressFraction?.times(100)}%",
+        )
+    },
+)
+```
+
 ## Public API
 
 - `YtDlp.getVersion(context)`
 - `YtDlp.extractInfo(context, url, options)`
-- `YtDlp.download(context, url, options)`
-- `YtDlp.run(context, request)`
+- `YtDlp.download(context, url, options, progressListener)`
+- `YtDlp.run(context, request, progressListener)`
 
 Errors are thrown as `YtDlpException`, which includes the Python exception type, traceback, and collected log messages.
 

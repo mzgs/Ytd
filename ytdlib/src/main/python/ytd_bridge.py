@@ -19,11 +19,69 @@ class _CollectorLogger:
         self.entries.append({"level": "error", "message": str(message)})
 
 
+def _safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _progress_fraction(progress):
+    downloaded = _safe_float(progress.get("downloaded_bytes"))
+    total = _safe_float(progress.get("total_bytes"))
+    total_estimate = _safe_float(progress.get("total_bytes_estimate"))
+    denominator = total or total_estimate
+
+    if downloaded is not None and denominator and denominator > 0:
+        return max(0.0, min(downloaded / denominator, 1.0))
+
+    percent_text = str(progress.get("_percent_str") or "").strip()
+    if percent_text.endswith("%"):
+        percent_value = _safe_float(percent_text[:-1])
+        if percent_value is not None:
+            return max(0.0, min(percent_value / 100.0, 1.0))
+
+    if progress.get("status") == "finished":
+        return 1.0
+
+    return None
+
+
+def _progress_payload(progress):
+    return {
+        "status": str(progress.get("status") or "unknown"),
+        "downloaded_bytes": _safe_int(progress.get("downloaded_bytes")),
+        "total_bytes": _safe_int(progress.get("total_bytes")),
+        "total_bytes_estimate": _safe_int(progress.get("total_bytes_estimate")),
+        "progress_fraction": _progress_fraction(progress),
+        "speed_bytes_per_second": _safe_float(progress.get("speed")),
+        "eta_seconds": _safe_float(progress.get("eta")),
+        "filename": progress.get("filename") or progress.get("info_dict", {}).get("_filename"),
+    }
+
+
+def _notify_progress(progress_callback, logger, progress):
+    if progress_callback is None:
+        return
+
+    try:
+        progress_callback.onProgress(json.dumps(_progress_payload(progress)))
+    except Exception as exc:
+        logger.warning(f"Progress callback failed: {exc}")
+
+
 def get_version():
     return __version__
 
 
-def run(request_json):
+def run(request_json, progress_callback=None):
     request = json.loads(request_json)
     download = bool(request.get("download", False))
     options = dict(request.get("options", {}))
@@ -34,6 +92,10 @@ def run(request_json):
     options.setdefault("no_warnings", True)
     if not download:
         options.setdefault("skip_download", True)
+    elif progress_callback is not None:
+        hooks = list(options.get("progress_hooks") or [])
+        hooks.append(lambda progress: _notify_progress(progress_callback, logger, progress))
+        options["progress_hooks"] = hooks
 
     try:
         with YoutubeDL(options) as yt_dlp:

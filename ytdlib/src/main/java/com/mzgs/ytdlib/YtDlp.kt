@@ -36,6 +36,7 @@ object YtDlp {
         context: Context,
         url: String,
         options: Map<String, Any?> = emptyMap(),
+        progressListener: YtDlpProgressListener? = null,
     ): YtDlpResult {
         return run(
             context = context,
@@ -44,6 +45,7 @@ object YtDlp {
                 download = true,
                 options = options,
             ),
+            progressListener = progressListener,
         )
     }
 
@@ -51,10 +53,21 @@ object YtDlp {
     fun run(
         context: Context,
         request: YtDlpRequest,
+        progressListener: YtDlpProgressListener? = null,
     ): YtDlpResult {
-        val responseJson = module(context)
-            .callAttr("run", request.toJson().toString())
-            .toString()
+        val responseJson = if (progressListener == null) {
+            module(context)
+                .callAttr("run", request.toJson().toString())
+                .toString()
+        } else {
+            module(context)
+                .callAttr(
+                    "run",
+                    request.toJson().toString(),
+                    YtDlpProgressCallback(progressListener),
+                )
+                .toString()
+        }
         val response = JSONObject(responseJson)
         val logs = response.optJSONArray("logs").toLogEntries()
 
@@ -114,6 +127,10 @@ object YtDlp {
     private const val MODULE_NAME = "ytd_bridge"
 }
 
+fun interface YtDlpProgressListener {
+    fun onProgress(progress: YtDlpProgress)
+}
+
 data class YtDlpRequest(
     val url: String,
     val download: Boolean = false,
@@ -134,6 +151,33 @@ data class YtDlpResult(
     val download: Boolean,
 )
 
+data class YtDlpProgress(
+    val status: String,
+    val downloadedBytes: Long?,
+    val totalBytes: Long?,
+    val totalBytesEstimate: Long?,
+    val progressFraction: Double?,
+    val speedBytesPerSecond: Double?,
+    val etaSeconds: Double?,
+    val filename: String?,
+) {
+    companion object {
+        internal fun fromJson(progressJson: String): YtDlpProgress {
+            val json = JSONObject(progressJson)
+            return YtDlpProgress(
+                status = json.optString("status", "unknown"),
+                downloadedBytes = json.optLongOrNull("downloaded_bytes"),
+                totalBytes = json.optLongOrNull("total_bytes"),
+                totalBytesEstimate = json.optLongOrNull("total_bytes_estimate"),
+                progressFraction = json.optDoubleOrNull("progress_fraction"),
+                speedBytesPerSecond = json.optDoubleOrNull("speed_bytes_per_second"),
+                etaSeconds = json.optDoubleOrNull("eta_seconds"),
+                filename = json.optStringOrNull("filename"),
+            )
+        }
+    }
+}
+
 data class YtDlpLogEntry(
     val level: String,
     val message: String,
@@ -145,6 +189,14 @@ class YtDlpException(
     val traceback: String?,
     val logs: List<YtDlpLogEntry>,
 ) : RuntimeException(message)
+
+class YtDlpProgressCallback(
+    private val listener: YtDlpProgressListener,
+) {
+    fun onProgress(progressJson: String) {
+        listener.onProgress(YtDlpProgress.fromJson(progressJson))
+    }
+}
 
 private fun Map<String, Any?>.toJsonObject(): JSONObject {
     return JSONObject().apply {
@@ -188,4 +240,25 @@ private fun Any?.toJsonValue(): Any {
         }
         else -> toString()
     }
+}
+
+private fun JSONObject.optLongOrNull(name: String): Long? {
+    if (!has(name) || isNull(name)) {
+        return null
+    }
+    return optLong(name)
+}
+
+private fun JSONObject.optDoubleOrNull(name: String): Double? {
+    if (!has(name) || isNull(name)) {
+        return null
+    }
+    return optDouble(name)
+}
+
+private fun JSONObject.optStringOrNull(name: String): String? {
+    if (!has(name) || isNull(name)) {
+        return null
+    }
+    return optString(name).ifBlank { null }
 }
