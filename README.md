@@ -2,6 +2,8 @@
 
 Android `yt-dlp` wrapper with a Kotlin API for metadata extraction, video downloads, and MP3 conversion.
 
+[![JitPack](https://jitpack.io/v/mzgs/Ytd.svg)](https://jitpack.io/#mzgs/Ytd)  
+
 ## Requirements
 
 - Android `minSdk 24`
@@ -26,9 +28,11 @@ Add the library dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.mzgs.Ytd:ytdlib:<tag>")
+    implementation("com.github.mzgs.Ytd:ytdlib:latest.release")
 }
 ```
+
+Replace `latest.release` with a Git tag if you want a pinned version.
 
 JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
 
