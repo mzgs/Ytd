@@ -12,6 +12,10 @@ object YtDlp {
     @Volatile
     private var isInitialized = false
 
+    fun init(context: Context) {
+        module(context)
+    }
+
     fun getVersion(context: Context): String {
         return module(context).callAttr("get_version").toString()
     }

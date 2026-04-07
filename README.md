@@ -38,6 +38,22 @@ JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
 
 ## Basic usage
 
+### Optional warm-up on app start
+
+Call `init` once if you want to pay the Python startup cost before the first real request.
+
+```kotlin
+import com.mzgs.ytdlib.YtDlp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+suspend fun warmYtDlp(context: Context) {
+    withContext(Dispatchers.IO) {
+        YtDlp.init(context)
+    }
+}
+```
+
 ### Get the bundled yt-dlp version
 
 ```kotlin
