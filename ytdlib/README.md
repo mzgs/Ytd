@@ -93,6 +93,8 @@ val audioPath = result.payload?.optString("audio_filepath")
 val mp3Path = result.payload?.optString("mp3_filepath")
 ```
 
+When `downloadAudio` has to convert to MP3, `progressListener` uses the first 50% for the `yt-dlp` download phase and the second 50% for on-device conversion progress. If conversion is skipped, it reports the normal `yt-dlp` download progress.
+
 `downloadFormat` uses the normal `yt-dlp` format selector syntax. The default is `bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio[abr<=128]/bestaudio/best`. Examples:
 
 - `bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio[abr<=128]/bestaudio/best` to prefer Android-friendly `m4a/AAC` first.

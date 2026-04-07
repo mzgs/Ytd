@@ -72,12 +72,13 @@ object YtDlp {
         val downloadOptions = options.toMutableMap().apply {
             put(FORMAT_OPTION_KEY, resolvedDownloadFormat)
         }
+        val audioDownloadProgressListener = progressListener?.asAudioDownloadProgressListener(conversionMode)
 
         val downloadResult = download(
             context = context,
             url = url,
             options = downloadOptions,
-            progressListener = progressListener,
+            progressListener = audioDownloadProgressListener,
         )
 
         val sourceFile = downloadResult.payload
@@ -98,13 +99,11 @@ object YtDlp {
             File(sourceFile.parentFile, "${sourceFile.nameWithoutExtension}.$MP3_EXTENSION")
         }
 
-        val shouldConvertToMp3 = when (conversionMode) {
-            AudioConversionMode.ALWAYS_CONVERT_MP3 -> sourceFile != mp3File
-            AudioConversionMode.ONLY_CONVERT_WHEN_NOT_M4A -> {
-                sourceFile != mp3File && !sourceFile.extension.equals(M4A_EXTENSION, ignoreCase = true)
-            }
-            AudioConversionMode.DO_NOT_CONVERT -> false
-        }
+        val shouldConvertToMp3 = shouldConvertToMp3(
+            sourceFile = sourceFile,
+            mp3File = mp3File,
+            conversionMode = conversionMode,
+        )
 
         val outputFile = if (shouldConvertToMp3) mp3File else sourceFile
         val outputIsMp3 = outputFile.extension.equals(MP3_EXTENSION, ignoreCase = true)
@@ -116,7 +115,7 @@ object YtDlp {
                     downloadedBytes = null,
                     totalBytes = null,
                     totalBytesEstimate = null,
-                    progressFraction = null,
+                    progressFraction = AUDIO_DOWNLOAD_PROGRESS_WEIGHT,
                     speedBytesPerSecond = null,
                     etaSeconds = null,
                     filename = outputFile.absolutePath,
@@ -128,6 +127,21 @@ object YtDlp {
                 mp3File = outputFile,
                 bitrateKbps = resolvedBitrateKbps,
                 lameQuality = resolvedLameQuality,
+                progressCallback = { conversionProgress ->
+                    progressListener?.onProgress(
+                        YtDlpProgress(
+                            status = "converting",
+                            downloadedBytes = null,
+                            totalBytes = null,
+                            totalBytesEstimate = null,
+                            progressFraction = AUDIO_DOWNLOAD_PROGRESS_WEIGHT +
+                                (conversionProgress.coerceIn(0.0, 1.0) * AUDIO_CONVERSION_PROGRESS_WEIGHT),
+                            speedBytesPerSecond = null,
+                            etaSeconds = null,
+                            filename = outputFile.absolutePath,
+                        ),
+                    )
+                },
             )
 
             if (commandResult.exitCode != 0) {
@@ -249,11 +263,79 @@ object YtDlp {
         }
     }
 
+    private fun YtDlpProgressListener.asAudioDownloadProgressListener(
+        conversionMode: AudioConversionMode,
+    ): YtDlpProgressListener {
+        var shouldReserveConversionProgress = when (conversionMode) {
+            AudioConversionMode.ALWAYS_CONVERT_MP3 -> true
+            AudioConversionMode.DO_NOT_CONVERT -> false
+            AudioConversionMode.ONLY_CONVERT_WHEN_NOT_M4A -> null
+        }
+
+        return YtDlpProgressListener { progress ->
+            if (shouldReserveConversionProgress == null) {
+                shouldReserveConversionProgress = shouldConvertFromFilename(
+                    filename = progress.filename,
+                    conversionMode = conversionMode,
+                )
+            }
+
+            val mappedProgress = if (shouldReserveConversionProgress != false) {
+                progress.copy(
+                    progressFraction = progress.progressFraction?.let {
+                        it.coerceIn(0.0, 1.0) * AUDIO_DOWNLOAD_PROGRESS_WEIGHT
+                    },
+                )
+            } else {
+                progress
+            }
+
+            onProgress(mappedProgress)
+        }
+    }
+
+    private fun shouldConvertToMp3(
+        sourceFile: File,
+        mp3File: File,
+        conversionMode: AudioConversionMode,
+    ): Boolean {
+        return when (conversionMode) {
+            AudioConversionMode.ALWAYS_CONVERT_MP3 -> sourceFile != mp3File
+            AudioConversionMode.ONLY_CONVERT_WHEN_NOT_M4A -> {
+                sourceFile != mp3File && !sourceFile.extension.equals(M4A_EXTENSION, ignoreCase = true)
+            }
+            AudioConversionMode.DO_NOT_CONVERT -> false
+        }
+    }
+
+    private fun shouldConvertFromFilename(
+        filename: String?,
+        conversionMode: AudioConversionMode,
+    ): Boolean? {
+        val extension = filename
+            ?.let(::File)
+            ?.extension
+            ?.lowercase()
+            ?.takeIf(String::isNotBlank)
+
+        return when (conversionMode) {
+            AudioConversionMode.ALWAYS_CONVERT_MP3 -> extension?.let { it != MP3_EXTENSION } ?: true
+            AudioConversionMode.ONLY_CONVERT_WHEN_NOT_M4A -> when (extension) {
+                null -> null
+                MP3_EXTENSION, M4A_EXTENSION -> false
+                else -> true
+            }
+            AudioConversionMode.DO_NOT_CONVERT -> false
+        }
+    }
+
     private const val MODULE_NAME = "ytd_bridge"
     private const val M4A_EXTENSION = "m4a"
     private const val MP3_EXTENSION = "mp3"
     private const val FORMAT_OPTION_KEY = "format"
-    private const val DEFAULT_MP3_DOWNLOAD_FORMAT = "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio[abr<=128]/bestaudio/best"
+    private const val AUDIO_DOWNLOAD_PROGRESS_WEIGHT = 0.5
+    private const val AUDIO_CONVERSION_PROGRESS_WEIGHT = 0.5
+    private const val DEFAULT_MP3_DOWNLOAD_FORMAT = "bestaudio[ext=m4a][tbr<=128]/bestaudio[acodec^=mp4a][tbr<=128]/bestaudio[tbr<=128]/bestaudio/best"
     private const val DEFAULT_MP3_LAME_QUALITY = 5
     private const val MIN_LAME_QUALITY = 0
     private const val MAX_LAME_QUALITY = 9

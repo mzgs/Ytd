@@ -13,6 +13,7 @@ internal fun convertAudioFileToMp3(
     mp3File: File,
     bitrateKbps: Int,
     lameQuality: Int,
+    progressCallback: ((Double) -> Unit)? = null,
 ): AudioConversionResult {
     var extractor: MediaExtractor? = null
     var codec: MediaCodec? = null
@@ -31,6 +32,8 @@ internal fun convertAudioFileToMp3(
 
         extractor.selectTrack(audioTrackIndex)
         val sourceFormat = extractor.getTrackFormat(audioTrackIndex)
+        val sourceDurationUs = sourceFormat.getLongOrNull(MediaFormat.KEY_DURATION)
+            ?.takeIf { it > 0L }
         val mimeType = sourceFormat.getString(MediaFormat.KEY_MIME)
             ?: return AudioConversionResult(
                 exitCode = -1,
@@ -45,6 +48,7 @@ internal fun convertAudioFileToMp3(
         val bufferInfo = MediaCodec.BufferInfo()
         var inputStreamEnded = false
         var outputStreamEnded = false
+        var lastReportedProgress = -1.0
 
         while (!outputStreamEnded) {
             if (!inputStreamEnded) {
@@ -101,6 +105,17 @@ internal fun convertAudioFileToMp3(
                             outputBuffer.position(bufferInfo.offset)
                             outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
                             activeWriter.write(outputBuffer)
+
+                            val durationUs = sourceDurationUs
+                            if (durationUs != null && bufferInfo.presentationTimeUs >= 0L) {
+                                val progressFraction = (bufferInfo.presentationTimeUs.toDouble() / durationUs.toDouble())
+                                    .coerceIn(0.0, 1.0)
+
+                                if (progressFraction >= lastReportedProgress + CONVERSION_PROGRESS_MIN_STEP) {
+                                    progressCallback?.invoke(progressFraction)
+                                    lastReportedProgress = progressFraction
+                                }
+                            }
                         }
 
                         codec.releaseOutputBuffer(outputBufferIndex, false)
@@ -120,6 +135,9 @@ internal fun convertAudioFileToMp3(
             )
 
         activeWriter.finish()
+        if (lastReportedProgress < 1.0) {
+            progressCallback?.invoke(1.0)
+        }
 
         if (!mp3File.exists() || mp3File.length() == 0L) {
             AudioConversionResult(
@@ -275,5 +293,14 @@ private fun MediaCodec.stopSafely() {
     runCatching { stop() }
 }
 
+private fun MediaFormat.getLongOrNull(name: String): Long? {
+    if (!containsKey(name)) {
+        return null
+    }
+
+    return runCatching { getLong(name) }.getOrNull()
+}
+
 private const val CODEC_TIMEOUT_US = 10_000L
+private const val CONVERSION_PROGRESS_MIN_STEP = 0.01
 private const val PCM_16_BIT_SAMPLE_BYTES = 2
