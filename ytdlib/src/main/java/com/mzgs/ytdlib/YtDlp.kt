@@ -1,23 +1,31 @@
 package com.mzgs.ytdlib
 
 import android.content.Context
+import android.os.Looper
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
 
 object YtDlp {
 
     @Volatile
     private var isInitialized = false
 
+    @Throws(YtDlpException::class)
     fun init(context: Context) {
-        module(context)
+        runSafely("init") {
+            module(context)
+        }
     }
 
+    @Throws(YtDlpException::class)
     fun getVersion(context: Context): String {
-        return module(context).callAttr("get_version").toString()
+        return runSafely("getVersion") {
+            module(context).callAttr("get_version").toString()
+        }
     }
 
     @Throws(YtDlpException::class)
@@ -26,14 +34,16 @@ object YtDlp {
         url: String,
         options: Map<String, Any?> = emptyMap(),
     ): YtDlpResult {
-        return run(
-            context = context,
-            request = YtDlpRequest(
-                url = url,
-                download = false,
-                options = options,
-            ),
-        )
+        return runSafely("extractInfo") {
+            run(
+                context = context,
+                request = YtDlpRequest(
+                    url = url,
+                    download = false,
+                    options = options,
+                ),
+            )
+        }
     }
 
     @Throws(YtDlpException::class)
@@ -43,15 +53,17 @@ object YtDlp {
         options: Map<String, Any?> = emptyMap(),
         progressListener: YtDlpProgressListener? = null,
     ): YtDlpResult {
-        return run(
-            context = context,
-            request = YtDlpRequest(
-                url = url,
-                download = true,
-                options = options,
-            ),
-            progressListener = progressListener,
-        )
+        return runSafely("download") {
+            run(
+                context = context,
+                request = YtDlpRequest(
+                    url = url,
+                    download = true,
+                    options = options,
+                ),
+                progressListener = progressListener,
+            )
+        }
     }
 
     @Throws(YtDlpException::class)
@@ -66,130 +78,132 @@ object YtDlp {
         deleteSourceFile: Boolean = true,
         conversionMode: AudioConversionMode = AudioConversionMode.ONLY_CONVERT_WHEN_NOT_M4A,
     ): YtDlpResult {
-        val resolvedBitrateKbps = bitrateKbps.coerceIn(64, 320)
-        val resolvedLameQuality = lameQuality.coerceIn(MIN_LAME_QUALITY, MAX_LAME_QUALITY)
-        val resolvedDownloadFormat = downloadFormat
-            ?.takeIf(String::isNotBlank)
-            ?: (options[FORMAT_OPTION_KEY] as? String)?.takeIf(String::isNotBlank)
-            ?: DEFAULT_MP3_DOWNLOAD_FORMAT
+        return runSafely("downloadAudio") {
+            val resolvedBitrateKbps = bitrateKbps.coerceIn(64, 320)
+            val resolvedLameQuality = lameQuality.coerceIn(MIN_LAME_QUALITY, MAX_LAME_QUALITY)
+            val resolvedDownloadFormat = downloadFormat
+                ?.takeIf(String::isNotBlank)
+                ?: (options[FORMAT_OPTION_KEY] as? String)?.takeIf(String::isNotBlank)
+                ?: DEFAULT_MP3_DOWNLOAD_FORMAT
 
-        val downloadOptions = options.toMutableMap().apply {
-            put(FORMAT_OPTION_KEY, resolvedDownloadFormat)
-        }
-        val audioDownloadProgressListener = progressListener?.asAudioDownloadProgressListener(conversionMode)
+            val downloadOptions = options.toMutableMap().apply {
+                put(FORMAT_OPTION_KEY, resolvedDownloadFormat)
+            }
+            val audioDownloadProgressListener = progressListener?.asAudioDownloadProgressListener(conversionMode)
 
-        val downloadResult = download(
-            context = context,
-            url = url,
-            options = downloadOptions,
-            progressListener = audioDownloadProgressListener,
-        )
-
-        val sourceFile = downloadResult.payload
-            ?.findDownloadedFilePath()
-            ?.let(::File)
-            ?.absoluteFile
-            ?.takeIf(File::exists)
-            ?: throw YtDlpException(
-                pythonType = "AudioConversion",
-                message = "Downloaded audio file path could not be resolved",
-                traceback = null,
-                logs = downloadResult.logs,
+            val downloadResult = download(
+                context = context,
+                url = url,
+                options = downloadOptions,
+                progressListener = audioDownloadProgressListener,
             )
 
-        val mp3File = if (sourceFile.extension.equals(MP3_EXTENSION, ignoreCase = true)) {
-            sourceFile
-        } else {
-            File(sourceFile.parentFile, "${sourceFile.nameWithoutExtension}.$MP3_EXTENSION")
-        }
+            val sourceFile = downloadResult.payload
+                ?.findDownloadedFilePath()
+                ?.let(::File)
+                ?.absoluteFile
+                ?.takeIf(File::exists)
+                ?: throw YtDlpException(
+                    pythonType = "AudioConversion",
+                    message = "Downloaded audio file path could not be resolved",
+                    traceback = null,
+                    logs = downloadResult.logs,
+                )
 
-        val shouldConvertToMp3 = shouldConvertToMp3(
-            sourceFile = sourceFile,
-            mp3File = mp3File,
-            conversionMode = conversionMode,
-        )
+            val mp3File = if (sourceFile.extension.equals(MP3_EXTENSION, ignoreCase = true)) {
+                sourceFile
+            } else {
+                File(sourceFile.parentFile, "${sourceFile.nameWithoutExtension}.$MP3_EXTENSION")
+            }
 
-        val outputFile = if (shouldConvertToMp3) mp3File else sourceFile
-        val outputIsMp3 = outputFile.extension.equals(MP3_EXTENSION, ignoreCase = true)
+            val shouldConvertToMp3 = shouldConvertToMp3(
+                sourceFile = sourceFile,
+                mp3File = mp3File,
+                conversionMode = conversionMode,
+            )
 
-        if (shouldConvertToMp3) {
+            val outputFile = if (shouldConvertToMp3) mp3File else sourceFile
+            val outputIsMp3 = outputFile.extension.equals(MP3_EXTENSION, ignoreCase = true)
+
+            if (shouldConvertToMp3) {
+                progressListener?.onProgress(
+                    YtDlpProgress(
+                        status = "converting",
+                        downloadedBytes = null,
+                        totalBytes = null,
+                        totalBytesEstimate = null,
+                        progressFraction = AUDIO_DOWNLOAD_PROGRESS_WEIGHT,
+                        speedBytesPerSecond = null,
+                        etaSeconds = null,
+                        filename = outputFile.absolutePath,
+                    ),
+                )
+
+                val commandResult = convertAudioFileToMp3(
+                    sourceFile = sourceFile,
+                    mp3File = outputFile,
+                    bitrateKbps = resolvedBitrateKbps,
+                    lameQuality = resolvedLameQuality,
+                    progressCallback = { conversionProgress ->
+                        progressListener?.onProgress(
+                            YtDlpProgress(
+                                status = "converting",
+                                downloadedBytes = null,
+                                totalBytes = null,
+                                totalBytesEstimate = null,
+                                progressFraction = AUDIO_DOWNLOAD_PROGRESS_WEIGHT +
+                                    (conversionProgress.coerceIn(0.0, 1.0) * AUDIO_CONVERSION_PROGRESS_WEIGHT),
+                                speedBytesPerSecond = null,
+                                etaSeconds = null,
+                                filename = outputFile.absolutePath,
+                            ),
+                        )
+                    },
+                )
+
+                if (commandResult.exitCode != 0) {
+                    throw YtDlpException(
+                        pythonType = "AudioConversion",
+                        message = "Audio conversion failed to convert ${sourceFile.name} to MP3",
+                        traceback = null,
+                        logs = downloadResult.logs + YtDlpLogEntry(
+                            level = "error",
+                            message = commandResult.output.ifBlank { "MP3 conversion failed" },
+                        ),
+                    )
+                }
+
+                if (deleteSourceFile && sourceFile != outputFile) {
+                    sourceFile.delete()
+                }
+            }
+
             progressListener?.onProgress(
                 YtDlpProgress(
-                    status = "converting",
-                    downloadedBytes = null,
-                    totalBytes = null,
-                    totalBytesEstimate = null,
-                    progressFraction = AUDIO_DOWNLOAD_PROGRESS_WEIGHT,
+                    status = "finished",
+                    downloadedBytes = outputFile.length().takeIf { it > 0L },
+                    totalBytes = outputFile.length().takeIf { it > 0L },
+                    totalBytesEstimate = outputFile.length().takeIf { it > 0L },
+                    progressFraction = 1.0,
                     speedBytesPerSecond = null,
                     etaSeconds = null,
                     filename = outputFile.absolutePath,
                 ),
             )
 
-            val commandResult = convertAudioFileToMp3(
-                sourceFile = sourceFile,
-                mp3File = outputFile,
-                bitrateKbps = resolvedBitrateKbps,
-                lameQuality = resolvedLameQuality,
-                progressCallback = { conversionProgress ->
-                    progressListener?.onProgress(
-                        YtDlpProgress(
-                            status = "converting",
-                            downloadedBytes = null,
-                            totalBytes = null,
-                            totalBytesEstimate = null,
-                            progressFraction = AUDIO_DOWNLOAD_PROGRESS_WEIGHT +
-                                (conversionProgress.coerceIn(0.0, 1.0) * AUDIO_CONVERSION_PROGRESS_WEIGHT),
-                            speedBytesPerSecond = null,
-                            etaSeconds = null,
-                            filename = outputFile.absolutePath,
-                        ),
-                    )
-                },
+            downloadResult.withPayloadFields(
+                "mp3_filepath" to outputFile.takeIf { outputIsMp3 }?.absolutePath,
+                "mp3_bitrate_kbps" to resolvedBitrateKbps.takeIf { shouldConvertToMp3 },
+                "mp3_lame_quality" to resolvedLameQuality.takeIf { shouldConvertToMp3 },
+                "download_format" to resolvedDownloadFormat,
+                "audio_filepath" to outputFile.absolutePath,
+                "audio_extension" to outputFile.extension.lowercase(),
+                "converted_to_mp3" to shouldConvertToMp3,
+                "output_is_mp3" to outputIsMp3,
+                "audio_conversion_mode" to conversionMode.name,
+                "source_filepath" to sourceFile.absolutePath,
             )
-
-            if (commandResult.exitCode != 0) {
-                throw YtDlpException(
-                    pythonType = "AudioConversion",
-                    message = "Audio conversion failed to convert ${sourceFile.name} to MP3",
-                    traceback = null,
-                    logs = downloadResult.logs + YtDlpLogEntry(
-                        level = "error",
-                        message = commandResult.output.ifBlank { "MP3 conversion failed" },
-                    ),
-                )
-            }
-
-            if (deleteSourceFile && sourceFile != outputFile) {
-                sourceFile.delete()
-            }
         }
-
-        progressListener?.onProgress(
-            YtDlpProgress(
-                status = "finished",
-                downloadedBytes = outputFile.length().takeIf { it > 0L },
-                totalBytes = outputFile.length().takeIf { it > 0L },
-                totalBytesEstimate = outputFile.length().takeIf { it > 0L },
-                progressFraction = 1.0,
-                speedBytesPerSecond = null,
-                etaSeconds = null,
-                filename = outputFile.absolutePath,
-            ),
-        )
-
-        return downloadResult.withPayloadFields(
-            "mp3_filepath" to outputFile.takeIf { outputIsMp3 }?.absolutePath,
-            "mp3_bitrate_kbps" to resolvedBitrateKbps.takeIf { shouldConvertToMp3 },
-            "mp3_lame_quality" to resolvedLameQuality.takeIf { shouldConvertToMp3 },
-            "download_format" to resolvedDownloadFormat,
-            "audio_filepath" to outputFile.absolutePath,
-            "audio_extension" to outputFile.extension.lowercase(),
-            "converted_to_mp3" to shouldConvertToMp3,
-            "output_is_mp3" to outputIsMp3,
-            "audio_conversion_mode" to conversionMode.name,
-            "source_filepath" to sourceFile.absolutePath,
-        )
     }
 
     @Throws(YtDlpException::class)
@@ -198,37 +212,39 @@ object YtDlp {
         request: YtDlpRequest,
         progressListener: YtDlpProgressListener? = null,
     ): YtDlpResult {
-        val responseJson = if (progressListener == null) {
-            module(context)
-                .callAttr("run", request.toJson().toString())
-                .toString()
-        } else {
-            module(context)
-                .callAttr(
-                    "run",
-                    request.toJson().toString(),
-                    YtDlpProgressCallback(progressListener),
-                )
-                .toString()
-        }
-        val response = JSONObject(responseJson)
-        val logs = response.optJSONArray("logs").toLogEntries()
+        return runSafely("run") {
+            val responseJson = if (progressListener == null) {
+                module(context)
+                    .callAttr("run", request.toJson().toString())
+                    .toString()
+            } else {
+                module(context)
+                    .callAttr(
+                        "run",
+                        request.toJson().toString(),
+                        YtDlpProgressCallback(progressListener),
+                    )
+                    .toString()
+            }
+            val response = JSONObject(responseJson)
+            val logs = response.optJSONArray("logs").toLogEntries()
 
-        if (!response.optBoolean("ok")) {
-            val error = response.getJSONObject("error")
-            throw YtDlpException(
-                pythonType = error.optString("type", "RuntimeError"),
-                message = error.optString("message", "yt-dlp failed"),
-                traceback = error.optString("traceback").ifBlank { null },
+            if (!response.optBoolean("ok")) {
+                val error = response.getJSONObject("error")
+                throw YtDlpException(
+                    pythonType = error.optString("type", "RuntimeError"),
+                    message = error.optString("message", "yt-dlp failed"),
+                    traceback = error.optString("traceback").ifBlank { null },
+                    logs = logs,
+                )
+            }
+
+            YtDlpResult(
+                payload = response.optJSONObject("result"),
                 logs = logs,
+                download = response.optBoolean("download"),
             )
         }
-
-        return YtDlpResult(
-            payload = response.optJSONObject("result"),
-            logs = logs,
-            download = response.optBoolean("download"),
-        )
     }
 
     private fun module(context: Context) = run {
@@ -246,6 +262,38 @@ object YtDlp {
                 Python.start(AndroidPlatform(context.applicationContext))
             }
             isInitialized = true
+        }
+    }
+
+    private inline fun <T> runSafely(
+        operation: String,
+        block: () -> T,
+    ): T {
+        ensureNotMainThread(operation)
+
+        return try {
+            block()
+        } catch (error: YtDlpException) {
+            throw error
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            if (error.isFatalRuntimeError()) {
+                throw error
+            }
+
+            throw error.asYtDlpException(operation)
+        }
+    }
+
+    private fun ensureNotMainThread(operation: String) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            throw YtDlpException(
+                pythonType = "MainThreadViolation",
+                message = "YtDlp.$operation must be called off the main thread. Use Dispatchers.IO or another background dispatcher.",
+                traceback = null,
+                logs = emptyList(),
+            )
         }
     }
 
@@ -412,7 +460,8 @@ class YtDlpException(
     override val message: String,
     val traceback: String?,
     val logs: List<YtDlpLogEntry>,
-) : RuntimeException(message)
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
 
 class YtDlpProgressCallback(
     private val listener: YtDlpProgressListener,
@@ -512,4 +561,25 @@ private fun YtDlpResult.withPayloadFields(vararg fields: Pair<String, Any?>): Yt
         payloadCopy.put(key, value.toJsonValue())
     }
     return copy(payload = payloadCopy)
+}
+
+private fun Throwable.asYtDlpException(operation: String): YtDlpException {
+    val errorType = this::class.java.simpleName
+        .takeIf(String::isNotBlank)
+        ?: "RuntimeException"
+    val errorMessage = message
+        ?.takeIf(String::isNotBlank)
+        ?: "YtDlp.$operation failed"
+
+    return YtDlpException(
+        pythonType = errorType,
+        message = "YtDlp.$operation failed: $errorMessage",
+        traceback = stackTraceToString(),
+        logs = emptyList(),
+        cause = this,
+    )
+}
+
+private fun Throwable.isFatalRuntimeError(): Boolean {
+    return this is VirtualMachineError || this is ThreadDeath || this is StackOverflowError
 }

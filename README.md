@@ -40,7 +40,7 @@ JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
 
 ### Optional warm-up on app start
 
-Call `init` once if you want to pay the Python startup cost before the first real request.
+Call `init` once if you want to pay the Python startup cost before the first real request. All public `YtDlp` APIs must run off the main thread. If you call them on the main thread, the library now throws `YtDlpException` immediately instead of blocking into an ANR.
 
 ```kotlin
 import com.mzgs.ytdlib.YtDlp
@@ -194,7 +194,7 @@ val result = YtDlp.run(
 
 ### Handle errors
 
-`YtDlpException` exposes the Python exception type, traceback, and captured logs.
+`YtDlpException` is the library's public failure type. Python failures, JSON parsing issues, codec/native setup failures, and main-thread misuse are normalized into `YtDlpException` for ordinary app-level error handling. It exposes the Python or wrapped error type, traceback, and captured logs.
 
 ```kotlin
 try {
