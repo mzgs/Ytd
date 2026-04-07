@@ -6,3 +6,15 @@ plugins {
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.chaquopy.python) apply false
 }
+
+val jitpackGroup = providers.environmentVariable("GROUP")
+    .map { "$it.${rootProject.name}" }
+    .orElse("com.github.mzgs.${rootProject.name}")
+
+val jitpackVersion = providers.environmentVariable("VERSION")
+    .orElse("LOCAL-SNAPSHOT")
+
+allprojects {
+    group = jitpackGroup.get()
+    version = jitpackVersion.get()
+}
