@@ -37,6 +37,7 @@ import com.mzgs.ytdlib.YtDlpException
 import com.mzgs.ytdlib.YtDlpProgress
 import com.mzgs.ytdlib.YtDlpProgressListener
 import com.mzgs.ytd.ui.theme.YtdTheme
+import com.mzgs.ytdlib.AudioConversionMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -365,6 +366,7 @@ private suspend fun runYtDlpAudioDownload(
                 progressListener = progressListener,
                 bitrateKbps = bitrateKbps,
                 lameQuality = lameQuality,
+                conversionMode = AudioConversionMode.ALWAYS_CONVERT_MP3
             )
 
             buildString {
