@@ -1,5 +1,13 @@
 jdk:
   - openjdk17
 
+before_install:
+  - |
+      if ! command -v python3 >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y python3
+      fi
+      python3 --version
+
 install:
   - ./gradlew :ytdlib:publishReleasePublicationToMavenLocal
