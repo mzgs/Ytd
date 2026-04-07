@@ -67,6 +67,7 @@ fun YtDlpTesterScreen(
     val coroutineScope = rememberCoroutineScope()
     var url by rememberSaveable { mutableStateOf("") }
     var mp3BitrateKbpsText by rememberSaveable { mutableStateOf(DEFAULT_MP3_BITRATE_KBPS.toString()) }
+    var mp3LameQualityText by rememberSaveable { mutableStateOf(DEFAULT_MP3_LAME_QUALITY.toString()) }
     var output by rememberSaveable { mutableStateOf("yt-dlp --json output will appear here") }
     var isRunning by rememberSaveable { mutableStateOf(false) }
     var progress by remember { mutableStateOf<YtDlpProgress?>(null) }
@@ -96,9 +97,21 @@ fun YtDlpTesterScreen(
             value = mp3BitrateKbpsText,
             onValueChange = { mp3BitrateKbpsText = it.filter(Char::isDigit) },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("MP3 bitrate (kbps)") },
+            label = { Text("Audio bitrate (kbps)") },
             placeholder = { Text("192") },
-            supportingText = { Text("Used by Download MP3. Range: 64–320 kbps") },
+            supportingText = { Text("Used when converting to MP3. Range: 64–320 kbps") },
+            singleLine = true,
+            enabled = !isRunning,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        )
+
+        OutlinedTextField(
+            value = mp3LameQualityText,
+            onValueChange = { mp3LameQualityText = it.filter(Char::isDigit) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("MP3 conversion speed") },
+            placeholder = { Text("9") },
+            supportingText = { Text("Used when converting to MP3. 0 = slowest/best, 9 = fastest") },
             singleLine = true,
             enabled = !isRunning,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -181,13 +194,19 @@ fun YtDlpTesterScreen(
 
                     val bitrateKbps = mp3BitrateKbpsText.toIntOrNull()
                     if (bitrateKbps == null) {
-                        output = "Please enter a valid MP3 bitrate"
+                        output = "Please enter a valid audio bitrate"
+                        return@Button
+                    }
+
+                    val lameQuality = mp3LameQualityText.toIntOrNull()
+                    if (lameQuality == null || lameQuality !in 0..9) {
+                        output = "Please enter a valid MP3 conversion speed from 0 to 9"
                         return@Button
                     }
 
                     isRunning = true
                     progress = null
-                    output = "Preparing MP3 download at ${bitrateKbps.coerceIn(64, 320)} kbps..."
+                    output = "Preparing audio download at ${bitrateKbps.coerceIn(64, 320)} kbps, MP3 speed $lameQuality..."
 
                     val progressListener = YtDlpProgressListener { update ->
                         coroutineScope.launch {
@@ -196,11 +215,12 @@ fun YtDlpTesterScreen(
                     }
 
                     coroutineScope.launch {
-                        output = runYtDlpMp3Download(
+                        output = runYtDlpAudioDownload(
                             context = applicationContext,
                             url = trimmedUrl,
                             progressListener = progressListener,
                             bitrateKbps = bitrateKbps,
+                            lameQuality = lameQuality,
                         )
                         isRunning = false
                     }
@@ -208,7 +228,7 @@ fun YtDlpTesterScreen(
                 enabled = !isRunning,
                 modifier = Modifier.weight(1f),
             ) {
-                Text("Download MP3")
+                Text("Download Audio")
             }
         }
 
@@ -323,18 +343,19 @@ private suspend fun runYtDlpDownload(
     }
 }
 
-private suspend fun runYtDlpMp3Download(
+private suspend fun runYtDlpAudioDownload(
     context: android.content.Context,
     url: String,
     progressListener: YtDlpProgressListener,
     bitrateKbps: Int,
+    lameQuality: Int,
 ): String {
     return withContext(Dispatchers.IO) {
         val downloadDirectory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: context.filesDir
 
         try {
-            val result = YtDlp.downloadMp3(
+            val result = YtDlp.downloadAudio(
                 context = context,
                 url = url,
                 options = mapOf(
@@ -343,14 +364,19 @@ private suspend fun runYtDlpMp3Download(
                 ),
                 progressListener = progressListener,
                 bitrateKbps = bitrateKbps,
+                lameQuality = lameQuality,
             )
 
             buildString {
-                appendLine("MP3 download finished")
+                appendLine("Audio download finished")
                 appendLine("Directory: ${downloadDirectory.absolutePath}")
-                appendLine("Bitrate: ${result.payload?.optInt("mp3_bitrate_kbps") ?: bitrateKbps} kbps")
-                result.payload?.optString("mp3_filepath")?.let { mp3Path ->
-                    appendLine("MP3: $mp3Path")
+                appendLine("Format: ${result.payload?.optString("audio_extension") ?: "unknown"}")
+                result.payload?.optBoolean("converted_to_mp3")?.takeIf { it }?.let {
+                    appendLine("MP3 bitrate: ${result.payload?.optInt("mp3_bitrate_kbps") ?: bitrateKbps} kbps")
+                    appendLine("MP3 speed: ${result.payload?.optInt("mp3_lame_quality") ?: lameQuality}")
+                }
+                result.payload?.optString("audio_filepath")?.let { audioPath ->
+                    appendLine("File: $audioPath")
                 }
                 appendLine()
                 append(result.payload?.toString(2) ?: "{}")
@@ -453,4 +479,5 @@ private fun formatEta(seconds: Long): String {
     }
 }
 
-private const val DEFAULT_MP3_BITRATE_KBPS = 192
+private const val DEFAULT_MP3_BITRATE_KBPS = 128
+private const val DEFAULT_MP3_LAME_QUALITY = 5

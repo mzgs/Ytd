@@ -51,17 +51,26 @@ object YtDlp {
     }
 
     @Throws(YtDlpException::class)
-    fun downloadMp3(
+    fun downloadAudio(
         context: Context,
         url: String,
         options: Map<String, Any?> = emptyMap(),
         progressListener: YtDlpProgressListener? = null,
-        bitrateKbps: Int = 192,
+        bitrateKbps: Int = 128,
+        lameQuality: Int = DEFAULT_MP3_LAME_QUALITY,
+        downloadFormat: String? = null,
         deleteSourceFile: Boolean = true,
+        conversionMode: AudioConversionMode = AudioConversionMode.ONLY_CONVERT_WHEN_NOT_M4A,
     ): YtDlpResult {
         val resolvedBitrateKbps = bitrateKbps.coerceIn(64, 320)
+        val resolvedLameQuality = lameQuality.coerceIn(MIN_LAME_QUALITY, MAX_LAME_QUALITY)
+        val resolvedDownloadFormat = downloadFormat
+            ?.takeIf(String::isNotBlank)
+            ?: (options[FORMAT_OPTION_KEY] as? String)?.takeIf(String::isNotBlank)
+            ?: DEFAULT_MP3_DOWNLOAD_FORMAT
+
         val downloadOptions = options.toMutableMap().apply {
-            putIfAbsent("format", "bestaudio/best")
+            put(FORMAT_OPTION_KEY, resolvedDownloadFormat)
         }
 
         val downloadResult = download(
@@ -78,7 +87,7 @@ object YtDlp {
             ?.takeIf(File::exists)
             ?: throw YtDlpException(
                 pythonType = "AudioConversion",
-                message = "Downloaded audio file path could not be resolved for MP3 conversion",
+                message = "Downloaded audio file path could not be resolved",
                 traceback = null,
                 logs = downloadResult.logs,
             )
@@ -89,7 +98,18 @@ object YtDlp {
             File(sourceFile.parentFile, "${sourceFile.nameWithoutExtension}.$MP3_EXTENSION")
         }
 
-        if (sourceFile != mp3File) {
+        val shouldConvertToMp3 = when (conversionMode) {
+            AudioConversionMode.ALWAYS_CONVERT_MP3 -> sourceFile != mp3File
+            AudioConversionMode.ONLY_CONVERT_WHEN_NOT_M4A -> {
+                sourceFile != mp3File && !sourceFile.extension.equals(M4A_EXTENSION, ignoreCase = true)
+            }
+            AudioConversionMode.DO_NOT_CONVERT -> false
+        }
+
+        val outputFile = if (shouldConvertToMp3) mp3File else sourceFile
+        val outputIsMp3 = outputFile.extension.equals(MP3_EXTENSION, ignoreCase = true)
+
+        if (shouldConvertToMp3) {
             progressListener?.onProgress(
                 YtDlpProgress(
                     status = "converting",
@@ -99,14 +119,15 @@ object YtDlp {
                     progressFraction = null,
                     speedBytesPerSecond = null,
                     etaSeconds = null,
-                    filename = mp3File.absolutePath,
+                    filename = outputFile.absolutePath,
                 ),
             )
 
             val commandResult = convertAudioFileToMp3(
                 sourceFile = sourceFile,
-                mp3File = mp3File,
+                mp3File = outputFile,
                 bitrateKbps = resolvedBitrateKbps,
+                lameQuality = resolvedLameQuality,
             )
 
             if (commandResult.exitCode != 0) {
@@ -121,7 +142,7 @@ object YtDlp {
                 )
             }
 
-            if (deleteSourceFile) {
+            if (deleteSourceFile && sourceFile != outputFile) {
                 sourceFile.delete()
             }
         }
@@ -129,19 +150,26 @@ object YtDlp {
         progressListener?.onProgress(
             YtDlpProgress(
                 status = "finished",
-                downloadedBytes = mp3File.length().takeIf { it > 0L },
-                totalBytes = mp3File.length().takeIf { it > 0L },
-                totalBytesEstimate = mp3File.length().takeIf { it > 0L },
+                downloadedBytes = outputFile.length().takeIf { it > 0L },
+                totalBytes = outputFile.length().takeIf { it > 0L },
+                totalBytesEstimate = outputFile.length().takeIf { it > 0L },
                 progressFraction = 1.0,
                 speedBytesPerSecond = null,
                 etaSeconds = null,
-                filename = mp3File.absolutePath,
+                filename = outputFile.absolutePath,
             ),
         )
 
         return downloadResult.withPayloadFields(
-            "mp3_filepath" to mp3File.absolutePath,
-            "mp3_bitrate_kbps" to resolvedBitrateKbps,
+            "mp3_filepath" to outputFile.takeIf { outputIsMp3 }?.absolutePath,
+            "mp3_bitrate_kbps" to resolvedBitrateKbps.takeIf { shouldConvertToMp3 },
+            "mp3_lame_quality" to resolvedLameQuality.takeIf { shouldConvertToMp3 },
+            "download_format" to resolvedDownloadFormat,
+            "audio_filepath" to outputFile.absolutePath,
+            "audio_extension" to outputFile.extension.lowercase(),
+            "converted_to_mp3" to shouldConvertToMp3,
+            "output_is_mp3" to outputIsMp3,
+            "audio_conversion_mode" to conversionMode.name,
             "source_filepath" to sourceFile.absolutePath,
         )
     }
@@ -222,7 +250,19 @@ object YtDlp {
     }
 
     private const val MODULE_NAME = "ytd_bridge"
+    private const val M4A_EXTENSION = "m4a"
     private const val MP3_EXTENSION = "mp3"
+    private const val FORMAT_OPTION_KEY = "format"
+    private const val DEFAULT_MP3_DOWNLOAD_FORMAT = "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio[abr<=128]/bestaudio/best"
+    private const val DEFAULT_MP3_LAME_QUALITY = 5
+    private const val MIN_LAME_QUALITY = 0
+    private const val MAX_LAME_QUALITY = 9
+}
+
+enum class AudioConversionMode {
+    ALWAYS_CONVERT_MP3,
+    ONLY_CONVERT_WHEN_NOT_M4A,
+    DO_NOT_CONVERT,
 }
 
 fun interface YtDlpProgressListener {

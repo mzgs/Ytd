@@ -12,6 +12,7 @@ internal fun convertAudioFileToMp3(
     sourceFile: File,
     mp3File: File,
     bitrateKbps: Int,
+    lameQuality: Int,
 ): AudioConversionResult {
     var extractor: MediaExtractor? = null
     var codec: MediaCodec? = null
@@ -81,6 +82,7 @@ internal fun convertAudioFileToMp3(
                         mediaFormat = codec.outputFormat,
                         mp3File = mp3File,
                         bitrateKbps = bitrateKbps,
+                        lameQuality = lameQuality,
                     )
                 }
 
@@ -93,6 +95,7 @@ internal fun convertAudioFileToMp3(
                                 mediaFormat = codec.outputFormat,
                                 mp3File = mp3File,
                                 bitrateKbps = bitrateKbps,
+                                lameQuality = lameQuality,
                             ).also { writer = it }
 
                             outputBuffer.position(bufferInfo.offset)
@@ -154,6 +157,28 @@ private class Pcm16LeMp3Writer private constructor(
     private var finished = false
 
     fun write(buffer: ByteBuffer) {
+        if (!buffer.hasRemaining()) {
+            return
+        }
+
+        if (remainder.isEmpty() && buffer.isDirect) {
+            val writableSize = buffer.remaining() - (buffer.remaining() % frameSizeBytes)
+            if (writableSize > 0) {
+                val directChunk = buffer.slice().apply {
+                    limit(writableSize)
+                }
+                encoder.encode(directChunk, writableSize)
+                buffer.position(buffer.position() + writableSize)
+            }
+
+            if (!buffer.hasRemaining()) {
+                return
+            }
+
+            remainder = ByteArray(buffer.remaining()).also(buffer::get)
+            return
+        }
+
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
         write(bytes)
@@ -205,6 +230,7 @@ private class Pcm16LeMp3Writer private constructor(
             mediaFormat: MediaFormat,
             mp3File: File,
             bitrateKbps: Int,
+            lameQuality: Int,
         ): Pcm16LeMp3Writer {
             val sampleRate = mediaFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             val channelCount = mediaFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
@@ -228,6 +254,7 @@ private class Pcm16LeMp3Writer private constructor(
                     sampleRate = sampleRate,
                     channelCount = channelCount,
                     bitrateKbps = bitrateKbps,
+                    lameQuality = lameQuality,
                 ),
             )
         }

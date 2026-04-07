@@ -2,6 +2,7 @@ package com.mzgs.ytdlib
 
 import java.io.Closeable
 import java.io.File
+import java.nio.ByteBuffer
 
 internal class NativeMp3Encoder private constructor(
     private var handle: Long,
@@ -14,6 +15,16 @@ internal class NativeMp3Encoder private constructor(
             return
         }
         nativeEncode(handle, pcmData, length)
+    }
+
+    fun encode(pcmData: ByteBuffer, length: Int) {
+        require(length >= 0) { "length must be non-negative" }
+        require(pcmData.isDirect) { "pcmData must be a direct ByteBuffer" }
+        require(length <= pcmData.remaining()) { "length exceeds PCM buffer size" }
+        if (length == 0) {
+            return
+        }
+        nativeEncodeDirect(handle, pcmData, length)
     }
 
     fun finish() {
@@ -38,12 +49,14 @@ internal class NativeMp3Encoder private constructor(
             sampleRate: Int,
             channelCount: Int,
             bitrateKbps: Int,
+            lameQuality: Int,
         ): NativeMp3Encoder {
             val handle = nativeCreate(
                 outputFile.absolutePath,
                 sampleRate,
                 channelCount,
                 bitrateKbps,
+                lameQuality,
             )
             return NativeMp3Encoder(handle)
         }
@@ -54,12 +67,20 @@ internal class NativeMp3Encoder private constructor(
             sampleRate: Int,
             channelCount: Int,
             bitrateKbps: Int,
+            lameQuality: Int,
         ): Long
 
         @JvmStatic
         private external fun nativeEncode(
             handle: Long,
             pcmData: ByteArray,
+            length: Int,
+        )
+
+        @JvmStatic
+        private external fun nativeEncodeDirect(
+            handle: Long,
+            pcmData: ByteBuffer,
             length: Int,
         )
 
