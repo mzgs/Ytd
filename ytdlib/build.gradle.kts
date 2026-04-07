@@ -1,9 +1,62 @@
+import org.gradle.api.GradleException
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.chaquopy.python)
     `maven-publish`
 }
+
+data class ChaquopyBuildPython(
+    val version: String,
+    val command: List<String>,
+)
+
+val supportedChaquopyVersions = listOf("3.14", "3.13", "3.12", "3.11", "3.10")
+
+fun parsePythonVersion(output: String): String? =
+    Regex("""Python (\d+\.\d+)(?:\.\d+)?""")
+        .find(output)
+        ?.groupValues
+        ?.get(1)
+
+fun probePythonCommand(command: List<String>): String? {
+    val process = runCatching {
+        ProcessBuilder(command + "--version")
+            .redirectErrorStream(true)
+            .start()
+    }.getOrNull() ?: return null
+
+    val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+    if (process.waitFor() != 0) {
+        return null
+    }
+
+    return parsePythonVersion(output)
+        ?.takeIf { it in supportedChaquopyVersions }
+}
+
+fun detectChaquopyBuildPython(): ChaquopyBuildPython {
+    val candidates = listOf(
+        listOf("python3"),
+        listOf("python"),
+    ) + supportedChaquopyVersions.map { version ->
+        listOf("python$version")
+    }
+
+    for (candidate in candidates) {
+        val version = probePythonCommand(candidate) ?: continue
+        return ChaquopyBuildPython(version = version, command = candidate)
+    }
+
+    throw GradleException(
+        "Couldn't find a supported Python for Chaquopy. Looked for " +
+            candidates.joinToString { it.joinToString(" ") } +
+            "."
+    )
+}
+
+val chaquopyBuildPython = detectChaquopyBuildPython()
 
 android {
     namespace = "com.mzgs.ytdlib"
@@ -59,6 +112,9 @@ android {
 
 chaquopy {
     defaultConfig {
+        version = chaquopyBuildPython.version
+        buildPython(*chaquopyBuildPython.command.toTypedArray())
+
         pip {
             install("yt-dlp")
         }
