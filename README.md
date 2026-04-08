@@ -28,7 +28,7 @@ Add the library dependency:
 
 ```kotlin
 dependencies {
-    imlementation("com.github.mzgs:ytdlib:1.2")
+    implementation("com.github.mzgs:Ytd:1.2")
 }
 ```
 
