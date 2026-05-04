@@ -120,6 +120,7 @@ chaquopy {
     defaultConfig {
         version = chaquopyBuildPython.version
         buildPython(*chaquopyBuildPython.command.toTypedArray())
+        extractPackages("curl_cffi")
 
         pip {
             // curl_cffi's Android wheel declares cffi>=2.0, while Chaquopy currently ships
