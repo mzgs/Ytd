@@ -32,7 +32,6 @@ dependencies {
 }
 ```
 
-Replace `latest.release` with a Git tag if you want a pinned version.
 
 JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
 
