@@ -12,7 +12,7 @@ data class ChaquopyBuildPython(
     val command: List<String>,
 )
 
-val supportedChaquopyVersions = listOf("3.14", "3.13", "3.12", "3.11", "3.10")
+val supportedChaquopyVersions = listOf("3.13")
 
 fun parsePythonVersion(output: String): String? =
     Regex("""Python (\d+\.\d+)(?:\.\d+)?""")
@@ -122,7 +122,14 @@ chaquopy {
         buildPython(*chaquopyBuildPython.command.toTypedArray())
 
         pip {
+            // curl_cffi's Android wheel declares cffi>=2.0, while Chaquopy currently ships
+            // Android cffi 1.17.1 for Python 3.13. Install the compatible wheel set directly.
+            options("--no-deps")
             install("yt-dlp")
+            install("pycparser")
+            install("certifi")
+            install("cffi==1.17.1")
+            install("curl_cffi==0.15.0")
         }
     }
 }
