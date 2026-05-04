@@ -23,6 +23,7 @@ def _prepare_curl_cffi_for_ytdlp():
 _prepare_curl_cffi_for_ytdlp()
 
 from yt_dlp import YoutubeDL
+from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.version import __version__
 
 
@@ -154,10 +155,24 @@ def get_diagnostics():
     return json.dumps(diagnostics)
 
 
+def _normalize_impersonate_option(value):
+    if value in (True, ""):
+        return ImpersonateTarget()
+    if isinstance(value, str):
+        return ImpersonateTarget.from_str(value.lower())
+    return value
+
+
+def _normalize_options(options):
+    if "impersonate" in options:
+        options["impersonate"] = _normalize_impersonate_option(options["impersonate"])
+    return options
+
+
 def run(request_json, progress_callback=None):
     request = json.loads(request_json)
     download = bool(request.get("download", False))
-    options = dict(request.get("options", {}))
+    options = _normalize_options(dict(request.get("options", {})))
     logger = _CollectorLogger()
 
     options.setdefault("logger", logger)
