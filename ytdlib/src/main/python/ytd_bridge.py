@@ -1,6 +1,26 @@
 import json
+import re
 import sys
 import traceback
+
+
+def _prepare_curl_cffi_for_ytdlp():
+    try:
+        import curl_cffi
+    except Exception:
+        return
+
+    version = getattr(curl_cffi, "__version__", "")
+    try:
+        version_parts = tuple(map(int, re.split(r"[^\d]+", version)[:3]))
+    except ValueError:
+        return
+    if (0, 15) <= version_parts < (0, 16):
+        curl_cffi._ytd_android_original_version = version
+        curl_cffi.__version__ = "0.14.0"
+
+
+_prepare_curl_cffi_for_ytdlp()
 
 from yt_dlp import YoutubeDL
 from yt_dlp.version import __version__
@@ -88,6 +108,7 @@ def get_diagnostics():
         "yt_dlp_version": __version__,
         "curl_cffi_import_ok": False,
         "curl_cffi_version": None,
+        "curl_cffi_effective_version": None,
         "curl_cffi_curl_version": None,
         "curl_cffi_error": None,
         "request_handlers": [],
@@ -98,7 +119,12 @@ def get_diagnostics():
     try:
         import curl_cffi
         diagnostics["curl_cffi_import_ok"] = True
-        diagnostics["curl_cffi_version"] = getattr(curl_cffi, "__version__", None)
+        diagnostics["curl_cffi_version"] = getattr(
+            curl_cffi,
+            "_ytd_android_original_version",
+            getattr(curl_cffi, "__version__", None),
+        )
+        diagnostics["curl_cffi_effective_version"] = getattr(curl_cffi, "__version__", None)
         diagnostics["curl_cffi_curl_version"] = getattr(curl_cffi, "__curl_version__", None)
     except Exception as exc:
         diagnostics["curl_cffi_error"] = "".join(
