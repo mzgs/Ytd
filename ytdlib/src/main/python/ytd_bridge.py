@@ -1,4 +1,5 @@
 import json
+import sys
 import traceback
 
 from yt_dlp import YoutubeDL
@@ -79,6 +80,52 @@ def _notify_progress(progress_callback, logger, progress):
 
 def get_version():
     return __version__
+
+
+def get_diagnostics():
+    diagnostics = {
+        "python_version": sys.version,
+        "yt_dlp_version": __version__,
+        "curl_cffi_import_ok": False,
+        "curl_cffi_version": None,
+        "curl_cffi_curl_version": None,
+        "curl_cffi_error": None,
+        "request_handlers": [],
+        "available_impersonate_targets": [],
+        "diagnostics_error": None,
+    }
+
+    try:
+        import curl_cffi
+        diagnostics["curl_cffi_import_ok"] = True
+        diagnostics["curl_cffi_version"] = getattr(curl_cffi, "__version__", None)
+        diagnostics["curl_cffi_curl_version"] = getattr(curl_cffi, "__curl_version__", None)
+    except Exception as exc:
+        diagnostics["curl_cffi_error"] = "".join(
+            traceback.format_exception_only(exc.__class__, exc)
+        ).strip()
+
+    try:
+        with YoutubeDL({"quiet": True, "no_warnings": True}) as yt_dlp:
+            handlers = getattr(getattr(yt_dlp, "_request_director", None), "handlers", {})
+            diagnostics["request_handlers"] = [
+                {
+                    "key": str(key),
+                    "name": getattr(handler, "RH_NAME", handler.__class__.__name__),
+                    "class": handler.__class__.__name__,
+                }
+                for key, handler in handlers.items()
+            ]
+            diagnostics["available_impersonate_targets"] = [
+                str(target)
+                for target in yt_dlp._get_available_impersonate_targets()
+            ]
+    except Exception as exc:
+        diagnostics["diagnostics_error"] = "".join(
+            traceback.format_exception_only(exc.__class__, exc)
+        ).strip()
+
+    return json.dumps(diagnostics)
 
 
 def run(request_json, progress_callback=None):

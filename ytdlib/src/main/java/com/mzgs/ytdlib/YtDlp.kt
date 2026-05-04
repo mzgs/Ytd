@@ -29,6 +29,13 @@ object YtDlp {
     }
 
     @Throws(YtDlpException::class)
+    fun getDiagnostics(context: Context): JSONObject {
+        return runSafely("getDiagnostics") {
+            JSONObject(module(context).callAttr("get_diagnostics").toString())
+        }
+    }
+
+    @Throws(YtDlpException::class)
     fun extractInfo(
         context: Context,
         url: String,
