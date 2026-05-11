@@ -191,6 +191,43 @@ val result = YtDlp.run(
 )
 ```
 
+### Use browser impersonation
+
+The library bundles `curl_cffi`, so yt-dlp browser impersonation can be enabled by passing the standard `impersonate` option. It is not enabled for every request by default; use it for sites that need browser-like TLS/client fingerprints.
+
+Use yt-dlp's default impersonation target:
+
+```kotlin
+val info = YtDlp.extractInfo(
+    context = context,
+    url = "https://example.com/video",
+    options = mapOf(
+        "impersonate" to true,
+    ),
+).payload
+```
+
+Or request a specific target:
+
+```kotlin
+val result = YtDlp.download(
+    context = context,
+    url = "https://example.com/video",
+    options = mapOf(
+        "impersonate" to "chrome",
+        "paths" to mapOf("home" to outputDir.absolutePath),
+        "outtmpl" to "%(title)s.%(ext)s",
+    ),
+)
+```
+
+You can inspect the bundled yt-dlp/curl_cffi setup and available impersonation targets with:
+
+```kotlin
+val diagnostics = YtDlp.getDiagnostics(context)
+Log.d("Ytd", diagnostics.toString(2))
+```
+
 ### Handle errors
 
 `YtDlpException` is the library's public failure type. Python failures, JSON parsing issues, codec/native setup failures, and main-thread misuse are normalized into `YtDlpException` for ordinary app-level error handling. It exposes the Python or wrapped error type, traceback, and captured logs.
