@@ -28,12 +28,15 @@ Add the library dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.mzgs:Ytd:1.3")
+    implementation("com.github.mzgs:Ytd:1.12")
 }
 ```
 
-
 JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
+
+## Current release
+
+`1.12` bundles `yt-dlp` `2026.07.04` and supports yt-dlp browser impersonation through `curl_cffi`.
 
 ## Basic usage
 
