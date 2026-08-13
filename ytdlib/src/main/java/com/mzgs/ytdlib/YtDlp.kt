@@ -2,6 +2,7 @@ package com.mzgs.ytdlib
 
 import android.content.Context
 import android.os.Looper
+import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import org.json.JSONArray
@@ -13,6 +14,9 @@ object YtDlp {
 
     @Volatile
     private var isInitialized = false
+
+    @Volatile
+    private var isQuickJsConfigured = false
 
     @Throws(YtDlpException::class)
     fun init(context: Context) {
@@ -254,9 +258,11 @@ object YtDlp {
         }
     }
 
-    private fun module(context: Context) = run {
+    private fun module(context: Context): PyObject {
         ensureStarted(context)
-        Python.getInstance().getModule(MODULE_NAME)
+        val pythonModule = Python.getInstance().getModule(MODULE_NAME)
+        ensureQuickJsConfigured(context, pythonModule)
+        return pythonModule
     }
 
     private fun ensureStarted(context: Context) {
@@ -269,6 +275,31 @@ object YtDlp {
                 Python.start(AndroidPlatform(context.applicationContext))
             }
             isInitialized = true
+        }
+    }
+
+    private fun ensureQuickJsConfigured(
+        context: Context,
+        pythonModule: PyObject,
+    ) {
+        if (isQuickJsConfigured) {
+            return
+        }
+
+        synchronized(this) {
+            if (isQuickJsConfigured) {
+                return
+            }
+
+            val quickJsExecutable = File(
+                context.applicationInfo.nativeLibraryDir,
+                QUICKJS_LIBRARY_NAME,
+            )
+            pythonModule.callAttr(
+                "configure_js_runtime",
+                quickJsExecutable.absolutePath,
+            )
+            isQuickJsConfigured = true
         }
     }
 
@@ -389,6 +420,7 @@ object YtDlp {
     }
 
     private const val MODULE_NAME = "ytd_bridge"
+    private const val QUICKJS_LIBRARY_NAME = "libqjs.so"
     private const val M4A_EXTENSION = "m4a"
     private const val MP3_EXTENSION = "mp3"
     private const val FORMAT_OPTION_KEY = "format"

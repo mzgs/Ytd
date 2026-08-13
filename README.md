@@ -9,6 +9,7 @@ Android `yt-dlp` wrapper with a Kotlin API for metadata extraction, video downlo
 - Android `minSdk 24`
 - Java 11 / Kotlin JVM target 11
 - `arm64-v8a` devices only
+- Native libraries must remain extracted because yt-dlp launches the bundled QuickJS executable.
 
 ## Install from JitPack
 
@@ -32,11 +33,27 @@ dependencies {
 }
 ```
 
+Keep native libraries extracted in the consuming application:
+
+```kotlin
+android {
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
+}
+```
+
+This setting is required for QuickJS: Android only provides a directly executable filesystem
+path for packaged native files when legacy/extracted JNI packaging is enabled. An Android
+library cannot force this final-APK setting on its consumer.
+
 JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
 
 ## Current release
 
-`4.7` bundles `yt-dlp` `2026.07.04` and supports yt-dlp browser impersonation through `curl_cffi`.
+`4.7` bundles `yt-dlp` `2026.07.04`, `yt-dlp-ejs` `0.8.0`, QuickJS-NG `0.15.1`,
+and browser impersonation support through `curl_cffi`. QuickJS is selected automatically
+for yt-dlp's YouTube JavaScript challenge solving; callers do not need to pass `js_runtimes`.
 
 ## Basic usage
 
@@ -230,6 +247,13 @@ You can inspect the bundled yt-dlp/curl_cffi setup and available impersonation t
 val diagnostics = YtDlp.getDiagnostics(context)
 Log.d("Ytd", diagnostics.toString(2))
 ```
+
+The diagnostics also report `yt_dlp_ejs_import_ok`, `quickjs_path`,
+`quickjs_executable`, and `quickjs_runtime`. On a working ARM64 installation,
+`quickjs_runtime.supported` is `true`.
+
+Applications may still override yt-dlp's `js_runtimes` option explicitly. When omitted,
+the library supplies the absolute path of its bundled QuickJS executable.
 
 ### Handle errors
 

@@ -1,4 +1,5 @@
 import org.gradle.api.GradleException
+import org.gradle.api.tasks.Exec
 
 plugins {
     alias(libs.plugins.android.library)
@@ -20,7 +21,7 @@ fun parsePythonVersion(output: String): String? =
         ?.groupValues
         ?.get(1)
 
-fun probePythonCommand(command: List<String>): String? {
+fun probePythonCommand(command: List<String>): ChaquopyBuildPython? {
     val process = runCatching {
         ProcessBuilder(command + "--version")
             .redirectErrorStream(true)
@@ -32,8 +33,28 @@ fun probePythonCommand(command: List<String>): String? {
         return null
     }
 
-    return parsePythonVersion(output)
+    val version = parsePythonVersion(output)
         ?.takeIf { it in supportedChaquopyVersions }
+        ?: return null
+
+    // Some Python distributions are exposed through a symlink. Passing that symlink to
+    // venv may record the symlink directory as Python's home and create a broken environment.
+    val executableProcess = runCatching {
+        ProcessBuilder(
+            command + listOf(
+                "-c",
+                "import os, sys; print(os.path.realpath(sys.executable))",
+            )
+        )
+            .redirectErrorStream(true)
+            .start()
+    }.getOrNull() ?: return null
+    val executable = executableProcess.inputStream.bufferedReader().use { it.readText().trim() }
+    if (executableProcess.waitFor() != 0 || executable.isBlank()) {
+        return null
+    }
+
+    return ChaquopyBuildPython(version = version, command = listOf(executable))
 }
 
 fun detectChaquopyBuildPython(): ChaquopyBuildPython {
@@ -51,8 +72,7 @@ fun detectChaquopyBuildPython(): ChaquopyBuildPython {
     }
 
     for (candidate in candidates) {
-        val version = probePythonCommand(candidate) ?: continue
-        return ChaquopyBuildPython(version = version, command = candidate)
+        return probePythonCommand(candidate) ?: continue
     }
 
     throw GradleException(
@@ -63,6 +83,10 @@ fun detectChaquopyBuildPython(): ChaquopyBuildPython {
 }
 
 val chaquopyBuildPython = detectChaquopyBuildPython()
+val quickJsBuildScript = rootProject.file("scripts/build-android-quickjs.sh")
+val quickJsWorkDir = layout.buildDirectory.dir("quickjs")
+val quickJsJniLibsDir = layout.buildDirectory.dir("generated/quickjs/jniLibs")
+val quickJsExecutable = quickJsJniLibsDir.map { it.file("arm64-v8a/libqjs.so") }
 
 android {
     namespace = "com.mzgs.ytdlib"
@@ -114,6 +138,44 @@ android {
             withSourcesJar()
         }
     }
+
+    sourceSets {
+        getByName("main").jniLibs.srcDir(quickJsJniLibsDir)
+    }
+
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
+}
+
+val buildBundledQuickJs by tasks.registering(Exec::class) {
+    description = "Builds the bundled QuickJS-NG executable for Android ARM64."
+    group = "build"
+
+    inputs.file(quickJsBuildScript)
+    inputs.property("quickJsVersion", "0.15.1")
+    outputs.file(quickJsExecutable)
+
+    doFirst {
+        quickJsExecutable.get().asFile.parentFile.mkdirs()
+    }
+
+    commandLine(
+        "bash",
+        quickJsBuildScript.absolutePath,
+        android.ndkDirectory.absolutePath,
+        quickJsExecutable.get().asFile.absolutePath,
+        quickJsWorkDir.get().asFile.absolutePath,
+    )
+}
+
+tasks.configureEach {
+    if (
+        name.startsWith("merge") &&
+        (name.endsWith("NativeLibs") || name.endsWith("JniLibFolders"))
+    ) {
+        dependsOn(buildBundledQuickJs)
+    }
 }
 
 chaquopy {
@@ -127,6 +189,7 @@ chaquopy {
             // Android cffi 1.17.1 for Python 3.13. Install the compatible wheel set directly.
             options("--no-deps")
             install("yt-dlp==2026.07.04")
+            install("yt-dlp-ejs==0.8.0")
             install("pycparser")
             install("certifi")
             install("cffi==1.17.1")

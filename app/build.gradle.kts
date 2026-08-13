@@ -39,6 +39,10 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        // Ytd launches its bundled QuickJS executable from nativeLibraryDir.
+        jniLibs.useLegacyPackaging = true
+    }
 }
 
 dependencies {

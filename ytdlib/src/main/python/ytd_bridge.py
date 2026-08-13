@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import sys
 import traceback
@@ -25,6 +26,22 @@ _prepare_curl_cffi_for_ytdlp()
 from yt_dlp import YoutubeDL
 from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.version import __version__
+
+
+_quickjs_path = None
+
+
+def configure_js_runtime(path):
+    global _quickjs_path
+    resolved_path = os.path.abspath(str(path)) if path else None
+    _quickjs_path = resolved_path if resolved_path and os.path.isfile(resolved_path) else None
+    return _quickjs_path is not None
+
+
+def _default_js_runtimes():
+    if not _quickjs_path:
+        return None
+    return {"quickjs": {"path": _quickjs_path}}
 
 
 class _CollectorLogger:
@@ -112,6 +129,14 @@ def get_diagnostics():
         "curl_cffi_effective_version": None,
         "curl_cffi_curl_version": None,
         "curl_cffi_error": None,
+        "yt_dlp_ejs_import_ok": False,
+        "yt_dlp_ejs_version": None,
+        "yt_dlp_ejs_error": None,
+        "quickjs_path": _quickjs_path,
+        "quickjs_exists": bool(_quickjs_path and os.path.isfile(_quickjs_path)),
+        "quickjs_executable": bool(_quickjs_path and os.access(_quickjs_path, os.X_OK)),
+        "quickjs_runtime": None,
+        "quickjs_error": None,
         "request_handlers": [],
         "available_impersonate_targets": [],
         "diagnostics_error": None,
@@ -133,7 +158,21 @@ def get_diagnostics():
         ).strip()
 
     try:
-        with YoutubeDL({"quiet": True, "no_warnings": True}) as yt_dlp:
+        import yt_dlp_ejs
+        diagnostics["yt_dlp_ejs_import_ok"] = True
+        diagnostics["yt_dlp_ejs_version"] = getattr(yt_dlp_ejs, "version", None)
+    except Exception as exc:
+        diagnostics["yt_dlp_ejs_error"] = "".join(
+            traceback.format_exception_only(exc.__class__, exc)
+        ).strip()
+
+    try:
+        diagnostic_options = {"quiet": True, "no_warnings": True}
+        js_runtimes = _default_js_runtimes()
+        if js_runtimes:
+            diagnostic_options["js_runtimes"] = js_runtimes
+
+        with YoutubeDL(diagnostic_options) as yt_dlp:
             handlers = getattr(getattr(yt_dlp, "_request_director", None), "handlers", {})
             diagnostics["request_handlers"] = [
                 {
@@ -147,6 +186,22 @@ def get_diagnostics():
                 str(target)
                 for target in yt_dlp._get_available_impersonate_targets()
             ]
+
+            quickjs = yt_dlp._js_runtimes.get("quickjs")
+            if quickjs:
+                try:
+                    info = quickjs.info
+                    if info:
+                        diagnostics["quickjs_runtime"] = {
+                            "name": info.name,
+                            "path": info.path,
+                            "version": info.version,
+                            "supported": info.supported,
+                        }
+                except Exception as exc:
+                    diagnostics["quickjs_error"] = "".join(
+                        traceback.format_exception_only(exc.__class__, exc)
+                    ).strip()
     except Exception as exc:
         diagnostics["diagnostics_error"] = "".join(
             traceback.format_exception_only(exc.__class__, exc)
@@ -166,6 +221,9 @@ def _normalize_impersonate_option(value):
 def _normalize_options(options):
     if "impersonate" in options:
         options["impersonate"] = _normalize_impersonate_option(options["impersonate"])
+    js_runtimes = _default_js_runtimes()
+    if js_runtimes:
+        options.setdefault("js_runtimes", js_runtimes)
     return options
 
 
