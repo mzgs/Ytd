@@ -29,7 +29,7 @@ Add the library dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.mzgs:Ytd:4.7")
+    implementation("com.github.mzgs:Ytd:4.8")
 }
 ```
 
@@ -51,7 +51,7 @@ JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
 
 ## Current release
 
-`4.7` bundles `yt-dlp` `2026.07.04`, `yt-dlp-ejs` `0.8.0`, QuickJS-NG `0.15.1`,
+`4.8` bundles `yt-dlp` `2026.07.04`, `yt-dlp-ejs` `0.8.0`, QuickJS-NG `0.15.1`,
 and browser impersonation support through `curl_cffi`. QuickJS is selected automatically
 for yt-dlp's YouTube JavaScript challenge solving; callers do not need to pass `js_runtimes`.
 
