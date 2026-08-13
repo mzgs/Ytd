@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -Eeuo pipefail
+trap 'status=$?; echo "QuickJS build failed at line ${LINENO} (exit ${status})" >&2; exit ${status}' ERR
 
 if [[ $# -ne 3 ]]; then
     echo "Usage: $0 <android-ndk-dir> <output-file> <work-dir>" >&2
