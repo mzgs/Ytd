@@ -25,7 +25,7 @@ if [[ ! -f "${NDK_DIR}/build/cmake/android.toolchain.cmake" ]]; then
 fi
 
 SDK_DIR=$(cd "${NDK_DIR}/../.." && pwd)
-CMAKE_BIN=$(find "${SDK_DIR}/cmake" -path '*/bin/cmake' -type f 2>/dev/null | sort -V | tail -n 1)
+CMAKE_BIN=$(find "${SDK_DIR}/cmake" -path '*/bin/cmake' -type f 2>/dev/null | sort -V | tail -n 1 || true)
 if [[ -z "${CMAKE_BIN}" || ! -x "${CMAKE_BIN}" ]]; then
     CMAKE_BIN=$(command -v cmake || true)
 fi

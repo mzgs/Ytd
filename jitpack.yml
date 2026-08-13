@@ -39,16 +39,4 @@ install:
 
       export CHAQUOPY_BUILD_PYTHON="$(command -v python3)"
       python3 --version
-
-      android_sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/android-sdk-linux}}"
-      sdkmanager_bin="$(
-        find "$android_sdk_dir/cmdline-tools" "$android_sdk_dir/tools" \
-          -path '*/bin/sdkmanager' -type f 2>/dev/null | head -n 1
-      )"
-      if [ -z "$sdkmanager_bin" ]; then
-        echo "Android sdkmanager not found under $android_sdk_dir"
-        exit 1
-      fi
-      "$sdkmanager_bin" --sdk_root="$android_sdk_dir" "cmake;3.22.1"
-
       ./gradlew :ytdlib:publishReleasePublicationToMavenLocal
