@@ -171,6 +171,12 @@ val buildBundledQuickJs by tasks.registering(Exec::class) {
     )
 }
 
+// AGP provisions the pinned SDK CMake package when these tasks run. Make that happen before
+// the standalone QuickJS build, including on clean JitPack images which have no system CMake.
+buildBundledQuickJs.configure {
+    dependsOn(tasks.matching { it.name.startsWith("configureCMake") })
+}
+
 tasks.configureEach {
     if (
         name.startsWith("merge") &&
