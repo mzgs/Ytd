@@ -113,6 +113,8 @@ android {
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
+            // Provision CMake in clean CI environments before buildBundledQuickJs runs.
+            version = "3.22.1"
         }
     }
 
