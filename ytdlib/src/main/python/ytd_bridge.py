@@ -227,10 +227,32 @@ def _normalize_options(options):
     return options
 
 
+def _configure_download_options(options):
+    extractor_args = options.get("extractor_args")
+    if extractor_args is None:
+        extractor_args = {}
+        options["extractor_args"] = extractor_args
+
+    if not isinstance(extractor_args, dict):
+        return
+
+    youtube_args = extractor_args.get("youtube")
+    if youtube_args is None:
+        youtube_args = {}
+        extractor_args["youtube"] = youtube_args
+
+    if not isinstance(youtube_args, dict):
+        return
+
+    youtube_args.setdefault("player_client", ["default", "-web"])
+
+
 def run(request_json, progress_callback=None):
     request = json.loads(request_json)
     download = bool(request.get("download", False))
     options = _normalize_options(dict(request.get("options", {})))
+    if download:
+        _configure_download_options(options)
     logger = _CollectorLogger()
 
     options.setdefault("logger", logger)

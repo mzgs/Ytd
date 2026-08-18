@@ -215,6 +215,8 @@ val result = YtDlp.run(
 
 The library bundles `curl_cffi`, so yt-dlp browser impersonation can be enabled by passing the standard `impersonate` option. It is not enabled for every request by default; use it for sites that need browser-like TLS/client fingerprints.
 
+For YouTube downloads, the library excludes yt-dlp's `web` player client by default. This avoids selecting media URLs that require a Proof of Origin (PO) token and can otherwise fail with HTTP 403 after JavaScript support is enabled. You can override this by explicitly setting `extractor_args["youtube"]["player_client"]`.
+
 Use yt-dlp's default impersonation target:
 
 ```kotlin
