@@ -196,7 +196,7 @@ chaquopy {
             // curl_cffi's Android wheel declares cffi>=2.0, while Chaquopy currently ships
             // Android cffi 1.17.1 for Python 3.13. Install the compatible wheel set directly.
             options("--no-deps")
-            install("yt-dlp==2026.07.04")
+            install("yt-dlp==2026.08.19")
             install("yt-dlp-ejs==0.8.0")
             install("pycparser")
             install("certifi")
