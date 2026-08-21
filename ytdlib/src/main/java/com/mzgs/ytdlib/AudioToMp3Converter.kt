@@ -32,6 +32,9 @@ internal fun convertAudioFileToMp3(
 
         extractor.selectTrack(audioTrackIndex)
         val sourceFormat = extractor.getTrackFormat(audioTrackIndex)
+        // MediaCodec implementations are allowed to choose float PCM unless the caller
+        // requests an output encoding. The native LAME bridge consumes signed PCM16.
+        sourceFormat.setInteger(MediaFormat.KEY_PCM_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
         val sourceDurationUs = sourceFormat.getLongOrNull(MediaFormat.KEY_DURATION)
             ?.takeIf { it > 0L }
         val mimeType = sourceFormat.getString(MediaFormat.KEY_MIME)
