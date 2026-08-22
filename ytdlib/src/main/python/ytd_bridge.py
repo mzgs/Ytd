@@ -30,6 +30,9 @@ from yt_dlp.version import __version__
 
 _quickjs_path = None
 
+_DEFAULT_DOWNLOAD_RETRIES = 10
+_DEFAULT_FRAGMENT_RETRIES = 10
+
 
 def configure_js_runtime(path):
     global _quickjs_path
@@ -228,6 +231,12 @@ def _normalize_options(options):
 
 
 def _configure_download_options(options):
+    # YoutubeDL's Python API doesn't inherit the CLI parser defaults. Without these,
+    # a transient CDN disconnect (for example curl error 56) aborts immediately
+    # instead of reopening the request and resuming the partially downloaded file.
+    options.setdefault("retries", _DEFAULT_DOWNLOAD_RETRIES)
+    options.setdefault("fragment_retries", _DEFAULT_FRAGMENT_RETRIES)
+
     extractor_args = options.get("extractor_args")
     if extractor_args is None:
         extractor_args = {}
