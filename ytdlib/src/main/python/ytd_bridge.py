@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import traceback
+import urllib.parse
 
 
 def _prepare_curl_cffi_for_ytdlp():
@@ -30,8 +31,20 @@ from yt_dlp.version import __version__
 
 _quickjs_path = None
 
-_DEFAULT_DOWNLOAD_RETRIES = 10
-_DEFAULT_FRAGMENT_RETRIES = 10
+_DEFAULT_DOWNLOAD_RETRIES = 0
+_DEFAULT_FRAGMENT_RETRIES = 2
+
+_PLAYER_API_LOG_PATTERN = re.compile(
+    r"Downloading (?P<client>[a-z0-9_ ]+) player API JSON",
+    re.IGNORECASE,
+)
+_YOUTUBE_URL_CLIENT_NAMES = {
+    "WEB_EMBEDDED_PLAYER": "web_embedded",
+    "WEB_REMIX": "web_music",
+    "WEB_CREATOR": "web_creator",
+    "TVHTML5": "tv",
+    "TVHTML5_SIMPLY": "tv_simply",
+}
 
 
 def configure_js_runtime(path):
@@ -256,6 +269,76 @@ def _configure_download_options(options):
     youtube_args.setdefault("player_client", ["default", "-web"])
 
 
+def _attempted_player_clients(logger):
+    clients = []
+    for entry in logger.entries:
+        match = _PLAYER_API_LOG_PATTERN.search(entry.get("message", ""))
+        if not match:
+            continue
+        client = match.group("client").strip().lower().replace(" ", "_")
+        if client not in clients:
+            clients.append(client)
+    return clients
+
+
+def _player_client_from_url(url):
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        raw_client = urllib.parse.parse_qs(
+            urllib.parse.urlsplit(url).query
+        ).get("c", [None])[0]
+    except (TypeError, ValueError):
+        return None
+    if not raw_client:
+        return None
+    normalized = str(raw_client).upper()
+    return _YOUTUBE_URL_CLIENT_NAMES.get(normalized, normalized.lower())
+
+
+def _selected_format_candidates(info):
+    requested_formats = info.get("requested_formats")
+    if isinstance(requested_formats, list) and requested_formats:
+        return [item for item in requested_formats if isinstance(item, dict)]
+
+    requested_downloads = info.get("requested_downloads")
+    if isinstance(requested_downloads, list) and requested_downloads:
+        candidates = [item for item in requested_downloads if isinstance(item, dict)]
+        if any(item.get("url") for item in candidates):
+            return candidates
+
+    return [info]
+
+
+def _selected_player_metadata(info):
+    selected_formats = []
+    selected_clients = []
+    for selected_format in _selected_format_candidates(info):
+        client = (
+            selected_format.get("__yt_dlp_client")
+            or _player_client_from_url(selected_format.get("url"))
+        )
+        if not client:
+            continue
+        client = str(client)
+        if client not in selected_clients:
+            selected_clients.append(client)
+
+        vcodec = selected_format.get("vcodec")
+        acodec = selected_format.get("acodec")
+        media_type = (
+            "audio" if vcodec == "none"
+            else "video" if acodec == "none"
+            else "video_audio"
+        )
+        selected_formats.append({
+            "format_id": selected_format.get("format_id"),
+            "media_type": media_type,
+            "player_client": client,
+        })
+    return selected_clients, selected_formats
+
+
 def run(request_json, progress_callback=None):
     request = json.loads(request_json)
     download = bool(request.get("download", False))
@@ -278,11 +361,15 @@ def run(request_json, progress_callback=None):
         with YoutubeDL(options) as yt_dlp:
             info = yt_dlp.extract_info(request["url"], download=download)
             sanitized = yt_dlp.sanitize_info(info)
+        selected_clients, selected_formats = _selected_player_metadata(info)
         response = {
             "ok": True,
             "download": download,
             "result": sanitized,
             "logs": logger.entries,
+            "player_clients_attempted": _attempted_player_clients(logger),
+            "selected_player_clients": selected_clients,
+            "selected_formats": selected_formats,
         }
     except Exception as exc:
         response = {

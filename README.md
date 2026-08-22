@@ -217,10 +217,23 @@ The library bundles `curl_cffi`, so yt-dlp browser impersonation can be enabled 
 
 For YouTube downloads, the library excludes yt-dlp's `web` player client by default. This avoids selecting media URLs that require a Proof of Origin (PO) token and can otherwise fail with HTTP 403 after JavaScript support is enabled. You can override this by explicitly setting `extractor_args["youtube"]["player_client"]`.
 
-Downloads also default to 10 HTTP retries and 10 fragment retries, matching yt-dlp's CLI
-behavior. This lets an interrupted media response resume after transient network failures such
-as curl error 56. Callers can override either value with the standard `retries` and
-`fragment_retries` options.
+Downloads default to no HTTP retries and two fragment retries. Persistent DNS or connection
+failures therefore stop after the initial HTTP attempt, while an individual failed media
+fragment can be retried twice. Callers can override either value with the standard `retries`
+and `fragment_retries` options.
+
+Successful results expose the YouTube clients that yt-dlp attempted and the client used by each
+selected media format. This remains accurate when separate video and audio streams come from
+different clients:
+
+```kotlin
+val result = YtDlp.download(context, url)
+Log.d("Ytd", "Attempted: ${result.playerClientsAttempted}")
+Log.d("Ytd", "Selected: ${result.selectedPlayerClients}")
+result.selectedFormats.forEach { format ->
+    Log.d("Ytd", "${format.formatId}: ${format.mediaType} from ${format.playerClient}")
+}
+```
 
 Use yt-dlp's default impersonation target:
 

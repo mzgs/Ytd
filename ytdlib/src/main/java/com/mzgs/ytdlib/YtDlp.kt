@@ -254,6 +254,9 @@ object YtDlp {
                 payload = response.optJSONObject("result"),
                 logs = logs,
                 download = response.optBoolean("download"),
+                playerClientsAttempted = response.optJSONArray("player_clients_attempted").toStringList(),
+                selectedPlayerClients = response.optJSONArray("selected_player_clients").toStringList(),
+                selectedFormats = response.optJSONArray("selected_formats").toSelectedFormats(),
             )
         }
     }
@@ -460,6 +463,15 @@ data class YtDlpResult(
     val payload: JSONObject?,
     val logs: List<YtDlpLogEntry>,
     val download: Boolean,
+    val playerClientsAttempted: List<String> = emptyList(),
+    val selectedPlayerClients: List<String> = emptyList(),
+    val selectedFormats: List<YtDlpSelectedFormat> = emptyList(),
+)
+
+data class YtDlpSelectedFormat(
+    val formatId: String?,
+    val mediaType: String,
+    val playerClient: String,
 )
 
 data class YtDlpProgress(
@@ -573,6 +585,36 @@ private fun JSONObject.optStringOrNull(name: String): String? {
         return null
     }
     return optString(name).ifBlank { null }
+}
+
+private fun JSONArray?.toStringList(): List<String> {
+    if (this == null) {
+        return emptyList()
+    }
+    return buildList {
+        for (index in 0 until length()) {
+            optString(index).takeIf(String::isNotBlank)?.let(::add)
+        }
+    }
+}
+
+private fun JSONArray?.toSelectedFormats(): List<YtDlpSelectedFormat> {
+    if (this == null) {
+        return emptyList()
+    }
+    return buildList {
+        for (index in 0 until length()) {
+            val format = optJSONObject(index) ?: continue
+            val playerClient = format.optStringOrNull("player_client") ?: continue
+            add(
+                YtDlpSelectedFormat(
+                    formatId = format.optStringOrNull("format_id"),
+                    mediaType = format.optString("media_type", "unknown"),
+                    playerClient = playerClient,
+                ),
+            )
+        }
+    }
 }
 
 private fun JSONObject.findDownloadedFilePath(): String? {
