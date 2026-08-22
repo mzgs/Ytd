@@ -2,6 +2,7 @@ package com.mzgs.ytdlib
 
 import android.media.AudioFormat
 import android.media.MediaCodec
+import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import java.io.Closeable
@@ -14,6 +15,58 @@ internal fun convertAudioFileToMp3(
     bitrateKbps: Int,
     lameQuality: Int,
     progressCallback: ((Double) -> Unit)? = null,
+): AudioConversionResult {
+    val mimeType = runCatching { sourceFile.findAudioMimeType() }
+        .getOrElse { throwable ->
+            return AudioConversionResult(
+                exitCode = -1,
+                output = throwable.stackTraceToString(),
+            )
+        }
+        ?: return AudioConversionResult(
+            exitCode = -1,
+            output = "No audio track found in ${sourceFile.name}",
+        )
+
+    val failures = mutableListOf<String>()
+    val decoderNames = findDecoderNames(mimeType)
+    var reportedProgress = 0.0
+
+    for (decoderName in decoderNames) {
+        mp3File.delete()
+        val result = convertAudioFileToMp3WithDecoder(
+            sourceFile = sourceFile,
+            mp3File = mp3File,
+            bitrateKbps = bitrateKbps,
+            lameQuality = lameQuality,
+            decoderName = decoderName,
+            progressCallback = { progress ->
+                if (progress > reportedProgress) {
+                    reportedProgress = progress
+                    progressCallback?.invoke(progress)
+                }
+            },
+        )
+        if (result.exitCode == 0) {
+            return result
+        }
+
+        failures += "Decoder ${decoderName ?: "system default"} failed:\n${result.output}"
+    }
+
+    return AudioConversionResult(
+        exitCode = -1,
+        output = failures.joinToString(separator = "\n\n"),
+    )
+}
+
+private fun convertAudioFileToMp3WithDecoder(
+    sourceFile: File,
+    mp3File: File,
+    bitrateKbps: Int,
+    lameQuality: Int,
+    decoderName: String?,
+    progressCallback: ((Double) -> Unit)?,
 ): AudioConversionResult {
     var extractor: MediaExtractor? = null
     var codec: MediaCodec? = null
@@ -43,7 +96,8 @@ internal fun convertAudioFileToMp3(
                 output = "Audio track MIME type could not be resolved for ${sourceFile.name}",
             )
 
-        codec = MediaCodec.createDecoderByType(mimeType).apply {
+        codec = (decoderName?.let(MediaCodec::createByCodecName)
+            ?: MediaCodec.createDecoderByType(mimeType)).apply {
             configure(sourceFormat, null, null, 0)
             start()
         }
@@ -59,6 +113,7 @@ internal fun convertAudioFileToMp3(
                 if (inputBufferIndex >= 0) {
                     val inputBuffer = codec.getInputBuffer(inputBufferIndex)
                         ?: throw IllegalStateException("Decoder input buffer was null")
+                    inputBuffer.clear()
                     val sampleSize = extractor.readSampleData(inputBuffer, 0)
                     if (sampleSize < 0) {
                         codec.queueInputBuffer(
@@ -70,12 +125,16 @@ internal fun convertAudioFileToMp3(
                         )
                         inputStreamEnded = true
                     } else {
+                        check(sampleSize <= inputBuffer.capacity()) {
+                            "Compressed audio sample ($sampleSize bytes) exceeds decoder input " +
+                                "capacity (${inputBuffer.capacity()} bytes)"
+                        }
                         codec.queueInputBuffer(
                             inputBufferIndex,
                             0,
                             sampleSize,
                             extractor.sampleTime,
-                            extractor.sampleFlags,
+                            extractor.sampleFlags.toCodecInputFlags(),
                         )
                         extractor.advance()
                     }
@@ -161,6 +220,52 @@ internal fun convertAudioFileToMp3(
         codec?.stopSafely()
         codec?.release()
         extractor?.release()
+    }
+}
+
+private fun File.findAudioMimeType(): String? {
+    val extractor = MediaExtractor()
+    return try {
+        extractor.setDataSource(absolutePath)
+        extractor.findAudioTrackIndex()
+            ?.let(extractor::getTrackFormat)
+            ?.getString(MediaFormat.KEY_MIME)
+    } finally {
+        extractor.release()
+    }
+}
+
+private fun findDecoderNames(mimeType: String): List<String?> {
+    val decoderNames = runCatching {
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+            .asSequence()
+            .filterNot { it.isEncoder }
+            .filter { codecInfo ->
+                codecInfo.supportedTypes.any { it.equals(mimeType, ignoreCase = true) }
+            }
+            .map { it.name }
+            .distinct()
+            .sortedByDescending(::isLikelySoftwareCodec)
+            .toList()
+    }.getOrDefault(emptyList())
+
+    // The system-default path is retained as a final fallback in case a device does
+    // not expose its preferred decoder through REGULAR_CODECS.
+    return decoderNames + null
+}
+
+private fun isLikelySoftwareCodec(codecName: String): Boolean {
+    return codecName.startsWith("c2.android.", ignoreCase = true) ||
+        codecName.startsWith("OMX.google.", ignoreCase = true)
+}
+
+private fun Int.toCodecInputFlags(): Int {
+    // MediaExtractor and MediaCodec flags are separate APIs. In particular,
+    // SAMPLE_FLAG_ENCRYPTED has the same numeric value as BUFFER_FLAG_CODEC_CONFIG.
+    return if ((this and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
+        MediaCodec.BUFFER_FLAG_KEY_FRAME
+    } else {
+        0
     }
 }
 

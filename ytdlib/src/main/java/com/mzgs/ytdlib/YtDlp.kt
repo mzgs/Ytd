@@ -426,7 +426,7 @@ object YtDlp {
     private const val FORMAT_OPTION_KEY = "format"
     private const val AUDIO_DOWNLOAD_PROGRESS_WEIGHT = 0.5
     private const val AUDIO_CONVERSION_PROGRESS_WEIGHT = 0.5
-    private const val DEFAULT_MP3_DOWNLOAD_FORMAT = "bestaudio[ext=m4a][tbr<=128]/bestaudio[acodec^=mp4a][tbr<=128]/bestaudio[tbr<=128]/bestaudio/best"
+    private const val DEFAULT_MP3_DOWNLOAD_FORMAT = "bestaudio[ext=m4a][acodec=mp4a.40.2][tbr<=140]/bestaudio[ext=m4a][tbr<=128]/bestaudio[acodec^=mp4a][tbr<=128]/bestaudio[tbr<=128]/bestaudio/best"
     private const val DEFAULT_MP3_LAME_QUALITY = 5
     private const val MIN_LAME_QUALITY = 0
     private const val MAX_LAME_QUALITY = 9
