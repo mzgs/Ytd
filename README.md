@@ -49,6 +49,21 @@ library cannot force this final-APK setting on its consumer.
 
 JitPack builds only the `ytdlib` module through [`jitpack.yml`](jitpack.yml).
 
+### R8 / ProGuard
+
+The library is published without minification so the consuming app can optimize it
+as part of its release build. Its consumer rules preserve the `onProgress(String)`
+callback invoked by Python; Chaquopy also packages its required runtime rules.
+Do not add a package-wide keep rule for `com.mzgs.ytdlib`.
+
+Enable code and resource shrinking in the consuming app's release build and use
+`proguard-android-optimize.txt`, which includes the JNI name-preservation rules
+required by the native MP3 encoder. The sample app's release build uses these settings.
+
+Consumer-rule changes require a new published library version and a dependency
+update in consuming apps. Before releasing an update, test download progress,
+QuickJS initialization, and MP3 conversion in a minified app on an ARM64 device.
+
 ## Current release
 
 `4.9` bundles `yt-dlp` `2026.08.19`, `yt-dlp-ejs` `0.8.0`, QuickJS-NG `0.15.1`,
