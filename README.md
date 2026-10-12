@@ -169,6 +169,10 @@ suspend fun downloadVideo(context: Context, url: String) {
 
 ### Download audio and convert to MP3
 
+Audio-only streams are preferred, with M4A/AAC first. If none are available, the default
+selector falls back to the lowest-quality stream containing both video and audio.
+MP3 conversion extracts only its audio track; lower video quality does not guarantee the smallest file size.
+
 ```kotlin
 import android.os.Environment
 import com.mzgs.ytdlib.AudioConversionMode
