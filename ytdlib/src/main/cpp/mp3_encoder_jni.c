@@ -1,5 +1,6 @@
 #include <jni.h>
 #include "lame_ffi.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +38,12 @@ static void throw_illegal_state(JNIEnv *env, const char *message) {
 
 static void throw_io_exception(JNIEnv *env, const char *message) {
     throw_exception(env, "java/io/IOException", message);
+}
+
+static void throw_output_exception(JNIEnv *env, const char *message, int error_code) {
+    char details[512];
+    snprintf(details, sizeof(details), "%s: [errno %d] %s", message, error_code, strerror(error_code));
+    throw_exception(env, "com/mzgs/ytdlib/Mp3OutputException", details);
 }
 
 static void destroy_handle(Mp3EncoderHandle *handle) {
@@ -125,7 +132,7 @@ static int encode_pcm_and_write(
     }
 
     if (encoded_size > 0 && fwrite(handle->buffer, 1U, (size_t) encoded_size, handle->file) != (size_t) encoded_size) {
-        throw_io_exception(env, "Failed to write encoded MP3 data");
+        throw_output_exception(env, "Failed to write encoded MP3 data", errno);
         return 0;
     }
 
@@ -247,10 +254,11 @@ Java_com_mzgs_ytdlib_NativeMp3Encoder_nativeCreate(
     }
 
     handle->file = fopen(output_path_chars, "wb");
+    const int open_error = errno;
     (*env)->ReleaseStringUTFChars(env, output_path, output_path_chars);
     if (handle->file == NULL) {
         destroy_handle(handle);
-        throw_io_exception(env, "Failed to open MP3 output file");
+        throw_output_exception(env, "Failed to open MP3 output file", open_error);
         return 0;
     }
 
@@ -417,11 +425,14 @@ Java_com_mzgs_ytdlib_NativeMp3Encoder_nativeFinish(
     }
 
     if (flush_size > 0 && fwrite(flush_buffer, 1U, (size_t) flush_size, handle->file) != (size_t) flush_size) {
-        throw_io_exception(env, "Failed to write final MP3 data");
+        throw_output_exception(env, "Failed to write final MP3 data", errno);
         return;
     }
 
-    fflush(handle->file);
+    if (fflush(handle->file) != 0) {
+        throw_output_exception(env, "Failed to flush MP3 output file", errno);
+        return;
+    }
     handle->finished = 1;
 }
 

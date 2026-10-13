@@ -241,6 +241,13 @@ failures therefore stop after the initial HTTP attempt, while an individual fail
 fragment can be retried twice. Callers can override either value with the standard `retries`
 and `fragment_retries` options.
 
+MP3 output-file failures stop decoder fallback and throw `YtDlpException` with
+`pythonType == "AudioOutput"`. The cause and error log include the OS error number and
+reason (for example, `No space left on device`). Applications should stop player-client
+fallback for these failures. The downloaded source is retained when conversion fails;
+the application owns cleanup of its temporary downloads. Successful MP3 conversion
+requires the final buffered write to succeed before the source can be deleted.
+
 Successful results expose the YouTube clients that yt-dlp attempted and the client used by each
 selected media format. This remains accurate when separate video and audio streams come from
 different clients:

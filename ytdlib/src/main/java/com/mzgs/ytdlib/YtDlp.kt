@@ -174,13 +174,14 @@ object YtDlp {
 
                 if (commandResult.exitCode != 0) {
                     throw YtDlpException(
-                        pythonType = "AudioConversion",
+                        pythonType = if (commandResult.cause is Mp3OutputException) "AudioOutput" else "AudioConversion",
                         message = "Audio conversion failed to convert ${sourceFile.name} to MP3",
                         traceback = null,
                         logs = downloadResult.logs + YtDlpLogEntry(
                             level = "error",
                             message = commandResult.output.ifBlank { "MP3 conversion failed" },
                         ),
+                        cause = commandResult.cause,
                     )
                 }
 

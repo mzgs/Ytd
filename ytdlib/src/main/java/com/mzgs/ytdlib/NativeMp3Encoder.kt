@@ -2,7 +2,10 @@ package com.mzgs.ytdlib
 
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.nio.ByteBuffer
+
+internal class Mp3OutputException(message: String) : IOException(message)
 
 internal class NativeMp3Encoder private constructor(
     private var handle: Long,

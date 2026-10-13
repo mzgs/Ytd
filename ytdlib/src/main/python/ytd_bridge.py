@@ -244,9 +244,7 @@ def _normalize_options(options):
 
 
 def _configure_download_options(options):
-    # YoutubeDL's Python API doesn't inherit the CLI parser defaults. Without these,
-    # a transient CDN disconnect (for example curl error 56) aborts immediately
-    # instead of reopening the request and resuming the partially downloaded file.
+    # Bound retries so persistent network failures return promptly; callers can override them.
     options.setdefault("retries", _DEFAULT_DOWNLOAD_RETRIES)
     options.setdefault("fragment_retries", _DEFAULT_FRAGMENT_RETRIES)
 

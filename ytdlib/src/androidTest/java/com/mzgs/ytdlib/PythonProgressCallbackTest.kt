@@ -11,6 +11,27 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PythonProgressCallbackTest {
     @Test
+    fun downloadRetryDefaultsAndCallerOverridesArePreserved() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        YtDlp.init(context)
+        val python = Python.getInstance()
+        val bridge = python.getModule("ytd_bridge")
+        val json = python.getModule("json")
+
+        val defaults = json.callAttr("loads", "{}")
+        bridge.callAttr("_configure_download_options", defaults)
+        val defaultOptions = org.json.JSONObject(json.callAttr("dumps", defaults).toString())
+        assertEquals(0, defaultOptions.getInt("retries"))
+        assertEquals(2, defaultOptions.getInt("fragment_retries"))
+
+        val overrides = json.callAttr("loads", """{"retries":1,"fragment_retries":0}""")
+        bridge.callAttr("_configure_download_options", overrides)
+        val overrideOptions = org.json.JSONObject(json.callAttr("dumps", overrides).toString())
+        assertEquals(1, overrideOptions.getInt("retries"))
+        assertEquals(0, overrideOptions.getInt("fragment_retries"))
+    }
+
+    @Test
     fun pythonProgressHookReachesKotlinListener() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         YtDlp.init(context)

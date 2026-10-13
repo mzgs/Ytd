@@ -21,6 +21,7 @@ internal fun convertAudioFileToMp3(
             return AudioConversionResult(
                 exitCode = -1,
                 output = throwable.stackTraceToString(),
+                cause = throwable,
             )
         }
         ?: return AudioConversionResult(
@@ -47,7 +48,7 @@ internal fun convertAudioFileToMp3(
                 }
             },
         )
-        if (result.exitCode == 0) {
+        if (result.exitCode == 0 || result.cause is Mp3OutputException) {
             return result
         }
 
@@ -214,6 +215,7 @@ private fun convertAudioFileToMp3WithDecoder(
         AudioConversionResult(
             exitCode = -1,
             output = throwable.stackTraceToString(),
+            cause = throwable,
         )
     } finally {
         writer?.close()
@@ -272,6 +274,7 @@ private fun Int.toCodecInputFlags(): Int {
 internal data class AudioConversionResult(
     val exitCode: Int,
     val output: String,
+    val cause: Throwable? = null,
 )
 
 private class Pcm16LeMp3Writer private constructor(
